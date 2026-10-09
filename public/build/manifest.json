@@ -1,0 +1,36 @@
+{
+  "resources/css/app.css": {
+    "file": "assets/app-4ed993c7.js",
+    "isEntry": true,
+    "src": "resources/css/app.css"
+  },
+  "resources/images/background1-min.webp": {
+    "file": "assets/background1-min-2ff29640.webp",
+    "src": "resources/images/background1-min.webp"
+  },
+  "resources/images/background1-min3.webp": {
+    "file": "assets/background1-min3-d9a1f7fc.webp",
+    "src": "resources/images/background1-min3.webp"
+  },
+  "resources/images/grandprize.webp": {
+    "file": "assets/grandprize-3e78aaf7.webp",
+    "src": "resources/images/grandprize.webp"
+  },
+  "resources/js/app.css": {
+    "file": "assets/app-27ac3205.css",
+    "src": "resources/js/app.css"
+  },
+  "resources/js/app.js": {
+    "assets": [
+      "assets/background1-min-2ff29640.webp",
+      "assets/background1-min3-d9a1f7fc.webp",
+      "assets/grandprize-3e78aaf7.webp"
+    ],
+    "css": [
+      "assets/app-27ac3205.css"
+    ],
+    "file": "assets/app-cedbb875.js",
+    "isEntry": true,
+    "src": "resources/js/app.js"
+  }
+}
