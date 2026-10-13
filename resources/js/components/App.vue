@@ -170,6 +170,20 @@
                                                 </div>
                                             </div>
 
+                                            <!-- TOMBOL SIMPAN & SIGN-IN -->
+                                            <div class="row mb-3">
+                                                <div class="col-6">
+                                                    <button class="btn btn-alt-primary w-100" v-on:click="saveSetting"
+                                                        :disabled="!!settingError || requiredWinners === 0">
+                                                        <i class="fa fa-sync opacity-50 me-1"></i> Simpan
+                                                    </button>
+                                                </div>
+                                                <div class="col-6">
+                                                    <a href="/admin" class="btn btn-alt-success w-100"><i
+                                                            class="fa fa-sign-in opacity-50 me-1"></i> Sign-in</a>
+                                                </div>
+                                            </div>
+
                                             <div class="mb-3">
                                                 <label class="form-label fw-semibold">
                                                     <i class="fa fa-expand-arrows-alt me-1 text-primary"></i>
@@ -275,18 +289,11 @@
                                                 </div>
                                             </div>
 
-                                            <div class="row">
-                                                <div class="col-6">
-                                                    <button class="btn btn-alt-primary w-100" v-on:click="saveSetting"
-                                                        :disabled="!!settingError || requiredWinners === 0">
-                                                        <i class="fa fa-sync opacity-50 me-1"></i> Simpan
-                                                    </button>
-                                                </div>
-                                                <div class="col-6">
-                                                    <a href="/admin" class="btn btn-alt-success w-100"><i
-                                                            class="fa fa-sign-in opacity-50 me-1"></i> Sign-in</a>
-                                                </div>
-                                            </div>
+                                            <!-- BACKGROUND HALAMAN UNDIAN -->
+                                            <BackgroundSetting storage-key="undianBackgroundImage" variant="undian"
+                                                accent="primary" :preview-style="tableAppearanceStyle"
+                                                :fallback-poster="bgImageInitial" :fallback-page="bgImage"
+                                                @change="customBgImage = $event" />
 
                                         </div>
                                     </div>
@@ -632,10 +639,14 @@
 import { ref, reactive, onMounted, computed, watch, inject } from "vue";
 import axios from "axios";
 import confetti from 'canvas-confetti';
+import BackgroundSetting from './BackgroundSetting.vue';
 import bgImage from '@/../images/background1-min.webp'
 import bgImageInitial from '@/../images/background1-min3.webp'
 
 export default {
+    components: {
+        BackgroundSetting
+    },
     setup() {
         const appName = inject('appName');
         const drawing = ref(false);
@@ -736,9 +747,11 @@ export default {
             selectedPrizeIds.value = filteredPrizes.value.map(item => item.id);
         };
 
-        // Background dinamis: jika sudah ada setup, gunakan bgImage, else poster awal
+        // Background dinamis: background custom dari sidebar (localStorage) menang,
+        // lalu bgImage setelah setup, terakhir poster awal.
+        const customBgImage = ref('');
         const currentBgImage = computed(() => {
-            return hasSetup.value ? bgImage : bgImageInitial;
+            return customBgImage.value || (hasSetup.value ? bgImage : bgImageInitial);
         });
 
         const drawButtonStyle = computed(() => {
@@ -1224,6 +1237,9 @@ export default {
             shuffling,
             pageSwitching,
             currentBgImage,
+            customBgImage,
+            bgImage,
+            bgImageInitial,
             drawButtonSize,
             drawButtonStyle,
             undianTopOffset,

@@ -17,7 +17,7 @@
     "src": "resources/images/grandprize.webp"
   },
   "resources/js/app.css": {
-    "file": "assets/app-27ac3205.css",
+    "file": "assets/app-60079b7a.css",
     "src": "resources/js/app.css"
   },
   "resources/js/app.js": {
@@ -27,9 +27,9 @@
       "assets/grandprize-3e78aaf7.webp"
     ],
     "css": [
-      "assets/app-27ac3205.css"
+      "assets/app-60079b7a.css"
     ],
-    "file": "assets/app-cedbb875.js",
+    "file": "assets/app-2bb26f83.js",
     "isEntry": true,
     "src": "resources/js/app.js"
   }

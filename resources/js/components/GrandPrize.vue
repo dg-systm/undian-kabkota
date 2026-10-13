@@ -94,6 +94,20 @@
                                                 </div>
                                             </div>
 
+                                            <!-- TOMBOL SIMPAN & SIGN-IN -->
+                                            <div class="row mb-3">
+                                                <div class="col-6">
+                                                    <button class="btn btn-alt-warning w-100" v-on:click="saveSetting"
+                                                        :disabled="!!settingError">
+                                                        <i class="fa fa-sync opacity-50 me-1"></i> Simpan
+                                                    </button>
+                                                </div>
+                                                <div class="col-6">
+                                                    <a href="/admin" class="btn btn-alt-success w-100"><i
+                                                            class="fa fa-sign-in opacity-50 me-1"></i> Sign-in</a>
+                                                </div>
+                                            </div>
+
                                             <div class="mb-3">
                                                 <label class="form-label fw-semibold">
                                                     <i class="fa fa-expand-arrows-alt me-1 text-warning"></i>
@@ -152,18 +166,11 @@
                                                 </div>
                                             </div>
 
-                                            <div class="row">
-                                                <div class="col-6">
-                                                    <button class="btn btn-alt-warning w-100" v-on:click="saveSetting"
-                                                        :disabled="!!settingError">
-                                                        <i class="fa fa-sync opacity-50 me-1"></i> Simpan
-                                                    </button>
-                                                </div>
-                                                <div class="col-6">
-                                                    <a href="/admin" class="btn btn-alt-success w-100"><i
-                                                            class="fa fa-sign-in opacity-50 me-1"></i> Sign-in</a>
-                                                </div>
-                                            </div>
+                                            <!-- BACKGROUND HALAMAN GRAND PRIZE -->
+                                            <BackgroundSetting storage-key="grandPrizeBackgroundImage"
+                                                variant="grand-prize" accent="warning"
+                                                :fallback-poster="bgImageInitial" :fallback-page="bgImage"
+                                                @change="customBgImage = $event" />
 
                                         </div>
                                     </div>
@@ -412,10 +419,14 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch, inject } from "vue";
 import axios from "axios";
 import confetti from 'canvas-confetti';
+import BackgroundSetting from './BackgroundSetting.vue';
 import bgImage from '@/../images/grandprize.webp'
 import bgImageInitial from '@/../images/background1-min3.webp'
 
 export default {
+    components: {
+        BackgroundSetting
+    },
     setup() {
         const appName = inject('appName');
         const drawing = ref(false);
@@ -530,8 +541,10 @@ export default {
             return '';
         });
 
+        // Background custom dari sidebar (localStorage) menang, lalu bgImage setelah setup.
+        const customBgImage = ref('');
         const currentBgImage = computed(() => {
-            return form.quantity > 0 ? bgImage : bgImageInitial;
+            return customBgImage.value || (form.quantity > 0 ? bgImage : bgImageInitial);
         });
 
         const form = reactive({
@@ -966,6 +979,8 @@ export default {
             saveSetting,
             form,
             bgImage,
+            bgImageInitial,
+            customBgImage,
             hasSetup,
 
             undianList,
