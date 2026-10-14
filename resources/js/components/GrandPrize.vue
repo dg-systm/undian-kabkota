@@ -108,46 +108,6 @@
                                                 </div>
                                             </div>
 
-                                            <div class="mb-3">
-                                                <label class="form-label fw-semibold">
-                                                    <i class="fa fa-expand-arrows-alt me-1 text-warning"></i>
-                                                    Ukuran Tombol Start
-                                                </label>
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <input type="range" class="form-range flex-grow-1" min="80"
-                                                        max="220" step="5" v-model.number="drawButtonSize">
-                                                    <input type="number" class="form-control form-control-sm"
-                                                        style="width: 78px;" min="80" max="220" step="5"
-                                                        v-model.number="drawButtonSize">
-                                                </div>
-                                                <div class="text-muted mt-1" style="font-size:0.72rem;">
-                                                    {{ drawButtonSize }}%
-                                                </div>
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <div class="d-flex justify-content-between align-items-center">
-                                                    <label class="form-label fw-semibold mb-0">
-                                                        <i class="fa fa-arrows-up-down me-1 text-warning"></i>
-                                                        Jarak Undian dari Atas
-                                                    </label>
-                                                    <button type="button" class="btn btn-xs btn-alt-secondary"
-                                                        @click="resetUndianTopOffset">
-                                                        Reset
-                                                    </button>
-                                                </div>
-                                                <div class="d-flex align-items-center gap-2 mt-1">
-                                                    <input type="range" class="form-range flex-grow-1" min="0"
-                                                        max="500" step="5" v-model.number="undianTopOffset">
-                                                    <input type="number" class="form-control form-control-sm"
-                                                        style="width: 84px;" min="0" max="500" step="5"
-                                                        v-model.number="undianTopOffset">
-                                                </div>
-                                                <div class="text-muted mt-1" style="font-size:0.72rem;">
-                                                    {{ undianTopOffset }} px
-                                                </div>
-                                            </div>
-
                                             <!-- SUMMARY -->
                                             <div class="mb-3 p-2 rounded" style="background: rgba(0,0,0,0.05);">
                                                 <div class="d-flex justify-content-between small mb-1">
@@ -166,11 +126,68 @@
                                                 </div>
                                             </div>
 
-                                            <!-- BACKGROUND HALAMAN GRAND PRIZE -->
-                                            <BackgroundSetting storage-key="grandPrizeBackgroundImage"
-                                                variant="grand-prize" accent="warning"
-                                                :fallback-poster="bgImageInitial" :fallback-page="bgImage"
-                                                @change="customBgImage = $event" />
+                                            <!-- PENGATURAN TAMPILAN: tampil setelah tombol Set ditekan -->
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <label class="form-label fw-semibold mb-0">
+                                                    <i class="fa fa-sliders-h me-1 text-warning"></i>
+                                                    Pengaturan Tampilan
+                                                </label>
+                                                <button type="button" class="btn btn-xs btn-alt-warning"
+                                                    @click="showAppearanceSettings = !showAppearanceSettings">
+                                                    <i class="fa me-1" :class="showAppearanceSettings ? 'fa-times' : 'fa-cog'"></i>
+                                                    {{ showAppearanceSettings ? 'Tutup' : 'Set' }}
+                                                </button>
+                                            </div>
+
+                                            <div v-show="showAppearanceSettings">
+                                                <div class="mb-3">
+                                                    <label class="form-label fw-semibold">
+                                                        <i class="fa fa-expand-arrows-alt me-1 text-warning"></i>
+                                                        Ukuran Tombol Start
+                                                    </label>
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <input type="range" class="form-range flex-grow-1" min="80"
+                                                            max="220" step="5" v-model.number="drawButtonSize">
+                                                        <input type="number" class="form-control form-control-sm"
+                                                            style="width: 78px;" min="80" max="220" step="5"
+                                                            v-model.number="drawButtonSize">
+                                                    </div>
+                                                    <div class="text-muted mt-1" style="font-size:0.72rem;">
+                                                        {{ drawButtonSize }}%
+                                                    </div>
+                                                </div>
+
+                                                <div class="mb-3">
+                                                    <div class="d-flex justify-content-between align-items-center">
+                                                        <label class="form-label fw-semibold mb-0">
+                                                            <i class="fa fa-arrows-up-down me-1 text-warning"></i>
+                                                            Jarak Undian dari Atas
+                                                        </label>
+                                                        <button type="button" class="btn btn-xs btn-alt-secondary"
+                                                            @click="resetUndianTopOffset">
+                                                            Reset
+                                                        </button>
+                                                    </div>
+                                                    <div class="d-flex align-items-center gap-2 mt-1">
+                                                        <input type="range" class="form-range flex-grow-1" min="0"
+                                                            max="500" step="5" v-model.number="undianTopOffset">
+                                                        <input type="number" class="form-control form-control-sm"
+                                                            style="width: 84px;" min="0" max="500" step="5"
+                                                            v-model.number="undianTopOffset">
+                                                    </div>
+                                                    <div class="text-muted mt-1" style="font-size:0.72rem;">
+                                                        {{ undianTopOffset }} px
+                                                    </div>
+                                                </div>
+
+                                                <!-- BACKGROUND HALAMAN GRAND PRIZE -->
+                                                <BackgroundSetting storage-key="grandPrizeBackgroundImage"
+                                                    variant="grand-prize" accent="warning"
+                                                    :fallback-poster="bgImageInitial" :fallback-page="bgImage"
+                                                    @change="customBgImage = $event"
+                                                    @size-change="customBgSize = $event" />
+
+                                            </div>
 
                                         </div>
                                     </div>
@@ -200,7 +217,7 @@
             </div>
         </header>
         <main id="main-container" style="padding-top:unset !important">
-            <div class="bg-undian" @click="trigger" :style="{ backgroundImage: `url(${currentBgImage})` }">
+            <div class="bg-undian" @click="trigger" :style="backgroundStyle">
                 <div class="bg-black-50">
                     <div class="content container-fluid undian-content">
                         <div class="undian-center" :style="{ marginTop: undianTopOffset + 'px' }">
@@ -546,6 +563,16 @@ export default {
         const currentBgImage = computed(() => {
             return customBgImage.value || (form.quantity > 0 ? bgImage : bgImageInitial);
         });
+
+        // Ukuran background (%), dikirim BackgroundSetting dan diterapkan ke halaman.
+        const customBgSize = ref(100);
+        const backgroundStyle = computed(() => ({
+            backgroundImage: `url(${currentBgImage.value})`,
+            backgroundSize: `${customBgSize.value}%`,
+        }));
+
+        // Panel pengaturan tampilan: tersembunyi sampai tombol Set ditekan.
+        const showAppearanceSettings = ref(false);
 
         const form = reactive({
             prize_ids: [],
@@ -1001,7 +1028,10 @@ export default {
             drawing,
             shuffling,
             pageSwitching,
-            currentBgImage
+            currentBgImage,
+            customBgSize,
+            backgroundStyle,
+            showAppearanceSettings
         };
     }
 }

@@ -79,18 +79,45 @@
             </button>
         </div>
 
+        <!-- Ukuran background: langsung diterapkan agar mudah disesuaikan -->
+        <div class="mt-2">
+            <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label fw-semibold mb-0" style="font-size: 0.8rem;">
+                    <i class="fa fa-search-plus me-1" :class="accentTextClass"></i>
+                    Ukuran Background
+                </label>
+                <button type="button" class="btn btn-xs btn-alt-secondary" :disabled="isSizeDefault"
+                    @click="resetBackgroundSize">
+                    Reset
+                </button>
+            </div>
+            <div class="d-flex align-items-center gap-2 mt-1">
+                <input type="range" class="form-range flex-grow-1" :min="MIN_SIZE" :max="MAX_SIZE" step="5"
+                    v-model.number="bgSize">
+                <input type="number" class="form-control form-control-sm" style="width: 78px;" :min="MIN_SIZE"
+                    :max="MAX_SIZE" step="5" v-model.number="bgSize">
+            </div>
+            <div class="text-muted mt-1" style="font-size: 0.72rem;">
+                {{ bgSize }}% — perubahan ukuran langsung diterapkan ke halaman.
+            </div>
+        </div>
+
         <input ref="fileInput" type="file" class="d-none" accept="image/png,image/jpeg,image/webp,image/gif"
             @change="onFilePicked">
 
         <div class="d-grid gap-2 mt-2">
-            <button type="button" class="btn btn-sm" :class="accentBtnClass" :disabled="!candidateBg"
+            <button type="button" class="btn btn-sm" :class="accentBtnClass" :disabled="!candidateBlob"
                 @click="applyBackground">
                 <i class="fa fa-check me-1"></i> Terapkan Background
             </button>
             <button type="button" class="btn btn-sm btn-alt-secondary"
-                :disabled="!hasCustom && !candidateBg" @click="resetBackground">
+                :disabled="!hasCustom && !candidateBlob && isSizeDefault" @click="resetBackground">
                 <i class="fa fa-undo me-1"></i> Reset ke Default
             </button>
+        </div>
+
+        <div v-if="candidateBlob" class="text-muted mt-2" style="font-size: 0.7rem;">
+            <i class="fa fa-file-image me-1"></i>{{ candidateBlob.name || 'gambar' }} · {{ candidateSizeLabel }}
         </div>
 
         <div class="mt-2 small" :class="statusClass">
@@ -100,34 +127,100 @@
             <i class="fa fa-exclamation-triangle me-1"></i>{{ error }}
         </div>
         <div class="text-muted mt-1" style="font-size: 0.7rem;">
-            JPG/PNG/WebP, disarankan 1920×1080 (landscape). Gambar otomatis dikompres dan disimpan di browser ini.
+            JPG/PNG/WebP/GIF, disarankan 1920×1080 (landscape). Gambar disimpan tanpa kompresi di browser ini.
         </div>
     </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_STORAGE_CHARS = 3000000;
-const MAX_DIMENSION = 1920;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const CANVAS_WIDTH = 1280;
 const CANVAS_HEIGHT = 720;
+const DEFAULT_SIZE = 100;
+const MIN_SIZE = 50;
+const MAX_SIZE = 200;
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
-const readAsDataUrl = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
-    reader.readAsDataURL(file);
+// Background disimpan apa adanya (tanpa kompresi) sebagai blob di IndexedDB,
+// karena localStorage tidak mampu menampung gambar beresolusi tinggi.
+const DB_NAME = 'undianBackgroundStore';
+const STORE_NAME = 'backgrounds';
+const DB_VERSION = 1;
+
+const openDatabase = () => new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+        reject(new Error('Browser ini tidak mendukung penyimpanan IndexedDB.'));
+        return;
+    }
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+        }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Gagal membuka penyimpanan browser.'));
 });
 
-const loadImage = (src) => new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Gambar tidak dapat dibaca.'));
-    img.src = src;
-});
+const idbGet = async (key) => {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const request = tx.objectStore(STORE_NAME).get(key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error('Gagal membaca gambar tersimpan.'));
+        tx.oncomplete = () => db.close();
+        tx.onerror = () => { db.close(); reject(tx.error || new Error('Gagal membaca gambar tersimpan.')); };
+        tx.onabort = () => { db.close(); reject(tx.error || new Error('Gagal membaca gambar tersimpan.')); };
+    });
+};
+
+const idbPut = async (key, blob) => {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(blob, key);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error || new Error('Gagal menyimpan gambar.')); };
+        tx.onabort = () => { db.close(); reject(tx.error || new Error('Penyimpanan gambar dibatalkan.')); };
+    });
+};
+
+const idbDelete = async (key) => {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).delete(key);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error || new Error('Gagal menghapus gambar.')); };
+        tx.onabort = () => { db.close(); reject(tx.error || new Error('Gagal menghapus gambar.')); };
+    });
+};
+
+// Konversi background lama (data URL di localStorage) ke blob untuk migrasi.
+const dataUrlToBlob = (dataUrl) => {
+    const [meta, base64] = String(dataUrl).split(',');
+    if (!base64) throw new Error('Data gambar lama tidak valid.');
+
+    const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'image/*';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mime });
+};
+
+const formatBytes = (bytes) => {
+    const size = Number(bytes) || 0;
+    if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+    return `${size} B`;
+};
 
 export default {
     props: {
@@ -156,7 +249,7 @@ export default {
             default: '',
         },
     },
-    emits: ['change'],
+    emits: ['change', 'size-change'],
     setup(props, { emit }) {
         const frameEl = ref(null);
         const fileInput = ref(null);
@@ -164,37 +257,74 @@ export default {
         const mode = ref('page');
         const error = ref('');
         const scale = ref(0.25);
+        const loading = ref(true);
 
-        const storedValue = () => {
+        // Ukuran background disimpan per halaman (storageKey + 'Size').
+        const sizeStorageKey = computed(() => `${props.storageKey}Size`);
+
+        const normalizeSize = (value) => {
+            const number = Number(value);
+            if (Number.isNaN(number)) return DEFAULT_SIZE;
+            return Math.min(Math.max(Math.round(number), MIN_SIZE), MAX_SIZE);
+        };
+
+        const readStoredSize = () => {
             try {
-                const value = localStorage.getItem(props.storageKey);
-                return value && value !== 'null' ? value : '';
+                const raw = localStorage.getItem(sizeStorageKey.value);
+                return raw !== null && raw !== '' ? normalizeSize(raw) : DEFAULT_SIZE;
             } catch (e) {
-                return '';
+                return DEFAULT_SIZE;
             }
         };
 
-        const savedBg = ref(storedValue());
-        const candidateBg = ref(savedBg.value);
+        // Background tersimpan & kandidat memakai blob + object URL,
+        // tanpa kompresi agar kualitas gambar asli tetap terjaga.
+        const savedBlob = ref(null);
+        const savedUrl = ref('');
+        const candidateBlob = ref(null);
+        const candidateUrl = ref('');
+        const bgSize = ref(readStoredSize());
 
-        const hasCustom = computed(() => !!savedBg.value);
-        const isDirty = computed(() => !!candidateBg.value && candidateBg.value !== savedBg.value);
+        const hasCustom = computed(() => !!savedUrl.value);
+        const isDirty = computed(() => !!candidateBlob.value && candidateBlob.value !== savedBlob.value);
+        const isSizeDefault = computed(() => bgSize.value === DEFAULT_SIZE);
+        const candidateSizeLabel = computed(() => (candidateBlob.value ? formatBytes(candidateBlob.value.size) : ''));
 
         const backgroundForMode = computed(() => {
-            if (candidateBg.value) return candidateBg.value;
+            const custom = candidateUrl.value || savedUrl.value;
+            if (custom) return custom;
             return mode.value === 'poster' ? props.fallbackPoster : props.fallbackPage;
         });
 
         const canvasStyle = computed(() => ({
             backgroundImage: backgroundForMode.value ? `url(${backgroundForMode.value})` : 'none',
+            backgroundSize: `${bgSize.value}%`,
             transform: `translate(-50%, -50%) scale(${scale.value})`,
         }));
+
+        // Perubahan ukuran langsung dipakai halaman (live preview) dan disimpan.
+        watch(bgSize, (value) => {
+            const normalized = normalizeSize(value);
+            if (normalized !== value) {
+                bgSize.value = normalized;
+                return;
+            }
+            try {
+                localStorage.setItem(sizeStorageKey.value, String(normalized));
+            } catch (e) { /* abaikan */ }
+            emit('size-change', normalized);
+        });
+
+        const resetBackgroundSize = () => {
+            bgSize.value = DEFAULT_SIZE;
+        };
 
         const accentBtnClass = computed(() => props.accent === 'warning' ? 'btn-alt-warning' : 'btn-alt-primary');
         const accentTextClass = computed(() => props.accent === 'warning' ? 'text-warning' : 'text-primary');
 
         const statusText = computed(() => {
             if (error.value) return 'Periksa pesan kesalahan di bawah.';
+            if (loading.value) return 'Memuat background tersimpan...';
             if (isDirty.value) return 'Pratinjau belum diterapkan.';
             if (hasCustom.value) return 'Background custom aktif.';
             return 'Menggunakan background bawaan.';
@@ -202,6 +332,7 @@ export default {
 
         const statusClass = computed(() => {
             if (error.value) return 'text-danger';
+            if (loading.value) return 'text-muted';
             if (isDirty.value) return 'text-warning';
             if (hasCustom.value) return 'text-success';
             return 'text-muted';
@@ -209,37 +340,33 @@ export default {
 
         const statusIcon = computed(() => {
             if (error.value) return 'fa-exclamation-triangle';
+            if (loading.value) return 'fa-spinner fa-spin';
             if (isDirty.value) return 'fa-pencil';
             if (hasCustom.value) return 'fa-check-circle';
             return 'fa-image';
         });
 
-        const compressImage = async (file) => {
-            const dataUrl = await readAsDataUrl(file);
-
-            // GIF dipertahankan apa adanya agar animasi tidak hilang.
-            if (file.type === 'image/gif') return dataUrl;
-
-            const img = await loadImage(dataUrl);
-            const ratio = Math.min(1, MAX_DIMENSION / Math.max(img.width, img.height));
-            const width = Math.max(1, Math.round(img.width * ratio));
-            const height = Math.max(1, Math.round(img.height * ratio));
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-
-            let compressed = canvas.toDataURL('image/webp', 0.85);
-            if (!compressed.startsWith('data:image/webp')) {
-                compressed = canvas.toDataURL('image/jpeg', 0.85);
+        const revokeUrl = (url) => {
+            if (url && url.startsWith('blob:')) {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch (e) { /* abaikan */ }
             }
-
-            // Pakai hasil terkecil supaya hemat kuota localStorage.
-            return compressed && compressed.length < dataUrl.length ? compressed : dataUrl;
         };
 
-        const useFile = async (file) => {
+        const setSavedBlob = (blob) => {
+            revokeUrl(savedUrl.value);
+            savedBlob.value = blob || null;
+            savedUrl.value = blob ? URL.createObjectURL(blob) : '';
+        };
+
+        const setCandidateBlob = (blob) => {
+            revokeUrl(candidateUrl.value);
+            candidateBlob.value = blob || null;
+            candidateUrl.value = blob ? URL.createObjectURL(blob) : '';
+        };
+
+        const useFile = (file) => {
             error.value = '';
 
             if (!file || !ALLOWED_TYPES.includes(file.type)) {
@@ -247,71 +374,91 @@ export default {
                 return;
             }
             if (file.size > MAX_FILE_BYTES) {
-                error.value = 'Ukuran file maksimal 10 MB.';
+                error.value = 'Ukuran file maksimal 25 MB.';
                 return;
             }
 
-            try {
-                const dataUrl = await compressImage(file);
-                if (dataUrl.length > MAX_STORAGE_CHARS) {
-                    error.value = 'Gambar masih terlalu besar setelah dikompres. Gunakan resolusi lebih kecil.';
-                    return;
-                }
-                candidateBg.value = dataUrl;
-            } catch (e) {
-                error.value = e.message || 'Gagal memproses gambar.';
-            }
+            // Tanpa kompresi: file asli dipakai apa adanya agar kualitas tetap.
+            setCandidateBlob(file);
         };
 
         const pickFile = () => {
             if (fileInput.value) fileInput.value.click();
         };
 
-        const onFilePicked = async (event) => {
+        const onFilePicked = (event) => {
             const file = event.target.files && event.target.files[0];
             event.target.value = '';
-            if (file) await useFile(file);
+            if (file) useFile(file);
         };
 
-        const onDrop = async (event) => {
+        const onDrop = (event) => {
             dragging.value = false;
             const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-            if (file) await useFile(file);
+            if (file) useFile(file);
         };
 
-        const applyBackground = () => {
+        const applyBackground = async () => {
             error.value = '';
-            if (!candidateBg.value) {
+            if (!candidateBlob.value) {
                 error.value = 'Pilih gambar terlebih dahulu.';
                 return;
             }
 
             try {
-                localStorage.setItem(props.storageKey, candidateBg.value);
+                await idbPut(props.storageKey, candidateBlob.value);
             } catch (e) {
-                error.value = 'Penyimpanan browser penuh. Gunakan gambar lebih kecil atau reset background.';
+                error.value = 'Gagal menyimpan gambar di browser ini. Coba ulangi atau gunakan gambar lain.';
                 return;
             }
 
-            savedBg.value = candidateBg.value;
-            emit('change', savedBg.value);
+            setSavedBlob(candidateBlob.value);
+            emit('change', savedUrl.value);
         };
 
-        const resetBackground = () => {
+        const resetBackground = async () => {
+            try {
+                await idbDelete(props.storageKey);
+            } catch (e) { /* abaikan */ }
+
+            // Bersihkan juga data lama (sebelum memakai IndexedDB).
             try {
                 localStorage.removeItem(props.storageKey);
             } catch (e) { /* abaikan */ }
 
-            savedBg.value = '';
-            candidateBg.value = '';
+            setCandidateBlob(null);
+            setSavedBlob(null);
             error.value = '';
+            bgSize.value = DEFAULT_SIZE;
             if (fileInput.value) fileInput.value.value = '';
             emit('change', '');
         };
 
+        // Background dari versi lama masih berupa data URL di localStorage:
+        // pindahkan ke IndexedDB agar ukuran file tidak terbatas kuota kecil.
+        const migrateLegacyBackground = async () => {
+            let legacy = '';
+            try {
+                legacy = localStorage.getItem(props.storageKey) || '';
+            } catch (e) {
+                legacy = '';
+            }
+            if (!legacy || !legacy.startsWith('data:image')) return;
+
+            try {
+                const blob = dataUrlToBlob(legacy);
+                await idbPut(props.storageKey, blob);
+                localStorage.removeItem(props.storageKey);
+                setSavedBlob(blob);
+            } catch (e) {
+                // Gagal migrasi: gambar lama tetap ditampilkan agar tidak hilang.
+                savedUrl.value = legacy;
+            }
+        };
+
         let observer = null;
 
-        onMounted(() => {
+        onMounted(async () => {
             if (frameEl.value && typeof ResizeObserver !== 'undefined') {
                 observer = new ResizeObserver((entries) => {
                     const width = entries[0] && entries[0].contentRect ? entries[0].contentRect.width : 0;
@@ -320,11 +467,26 @@ export default {
                 observer.observe(frameEl.value);
             }
 
-            emit('change', savedBg.value);
+            try {
+                const blob = await idbGet(props.storageKey);
+                if (blob) {
+                    setSavedBlob(blob);
+                } else {
+                    await migrateLegacyBackground();
+                }
+            } catch (e) {
+                error.value = 'Gagal memuat background tersimpan.';
+            }
+
+            loading.value = false;
+            emit('change', savedUrl.value);
+            emit('size-change', bgSize.value);
         });
 
         onBeforeUnmount(() => {
             if (observer) observer.disconnect();
+            revokeUrl(candidateUrl.value);
+            revokeUrl(savedUrl.value);
         });
 
         return {
@@ -333,9 +495,12 @@ export default {
             dragging,
             mode,
             error,
-            candidateBg,
+            candidateBlob,
+            candidateSizeLabel,
             hasCustom,
             isDirty,
+            bgSize,
+            isSizeDefault,
             canvasStyle,
             accentBtnClass,
             accentTextClass,
@@ -347,6 +512,10 @@ export default {
             onDrop,
             applyBackground,
             resetBackground,
+            resetBackgroundSize,
+            DEFAULT_SIZE,
+            MIN_SIZE,
+            MAX_SIZE,
         };
     },
 };
