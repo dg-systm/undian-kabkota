@@ -180,12 +180,13 @@
                                                     </div>
                                                 </div>
 
-                                                <!-- BACKGROUND HALAMAN GRAND PRIZE -->
+                                                <!-- BACKGROUND POSTER & HALAMAN GRAND PRIZE -->
                                                 <BackgroundSetting storage-key="grandPrizeBackgroundImage"
+                                                    poster-storage-key="grandPrizeBackgroundPosterImage"
                                                     variant="grand-prize" accent="warning"
                                                     :fallback-poster="bgImageInitial" :fallback-page="bgImage"
-                                                    @change="customBgImage = $event"
-                                                    @size-change="customBgSize = $event" />
+                                                    @change="onBackgroundChange"
+                                                    @size-change="onBackgroundSizeChange" />
 
                                             </div>
 
@@ -558,17 +559,29 @@ export default {
             return '';
         });
 
-        // Background custom dari sidebar (localStorage) menang, lalu bgImage setelah setup.
-        const customBgImage = ref('');
+        // Background dinamis: poster (sebelum setup) & halaman grand prize punya
+        // gambar + ukuran sendiri dari sidebar. Bila belum diatur, pakai bawaan.
+        const customBgImages = reactive({ poster: '', page: '' });
+        const customBgSizes = reactive({ poster: 100, page: 100 });
+
+        const onBackgroundChange = ({ mode, url }) => {
+            if (mode in customBgImages) customBgImages[mode] = url || '';
+        };
+
+        const onBackgroundSizeChange = ({ mode, size }) => {
+            if (mode in customBgSizes) customBgSizes[mode] = size;
+        };
+
         const currentBgImage = computed(() => {
-            return customBgImage.value || (form.quantity > 0 ? bgImage : bgImageInitial);
+            if (form.quantity > 0) return customBgImages.page || bgImage;
+            return customBgImages.poster || bgImageInitial;
         });
 
-        // Ukuran background (%), dikirim BackgroundSetting dan diterapkan ke halaman.
-        const customBgSize = ref(100);
+        const currentBgSize = computed(() => (form.quantity > 0 ? customBgSizes.page : customBgSizes.poster));
+
         const backgroundStyle = computed(() => ({
             backgroundImage: `url(${currentBgImage.value})`,
-            backgroundSize: `${customBgSize.value}%`,
+            backgroundSize: `${currentBgSize.value}%`,
         }));
 
         // Panel pengaturan tampilan: tersembunyi sampai tombol Set ditekan.
@@ -1007,7 +1020,7 @@ export default {
             form,
             bgImage,
             bgImageInitial,
-            customBgImage,
+            customBgImages,
             hasSetup,
 
             undianList,
@@ -1029,7 +1042,9 @@ export default {
             shuffling,
             pageSwitching,
             currentBgImage,
-            customBgSize,
+            customBgSizes,
+            onBackgroundChange,
+            onBackgroundSizeChange,
             backgroundStyle,
             showAppearanceSettings
         };

@@ -303,12 +303,13 @@
                                                     </div>
                                                 </div>
 
-                                                <!-- BACKGROUND HALAMAN UNDIAN -->
+                                                <!-- BACKGROUND POSTER & HALAMAN UNDIAN -->
                                                 <BackgroundSetting storage-key="undianBackgroundImage" variant="undian"
+                                                    poster-storage-key="undianBackgroundPosterImage"
                                                     accent="primary" :preview-style="tableAppearanceStyle"
                                                     :fallback-poster="bgImageInitial" :fallback-page="bgImage"
-                                                    @change="customBgImage = $event"
-                                                    @size-change="customBgSize = $event" />
+                                                    @change="onBackgroundChange"
+                                                    @size-change="onBackgroundSizeChange" />
 
                                             </div>
 
@@ -764,18 +765,29 @@ export default {
             selectedPrizeIds.value = filteredPrizes.value.map(item => item.id);
         };
 
-        // Background dinamis: background custom dari sidebar (localStorage) menang,
-        // lalu bgImage setelah setup, terakhir poster awal.
-        const customBgImage = ref('');
+        // Background dinamis: poster (sebelum setup) & halaman undian punya
+        // gambar + ukuran sendiri dari sidebar. Bila belum diatur, pakai bawaan.
+        const customBgImages = reactive({ poster: '', page: '' });
+        const customBgSizes = reactive({ poster: 100, page: 100 });
+
+        const onBackgroundChange = ({ mode, url }) => {
+            if (mode in customBgImages) customBgImages[mode] = url || '';
+        };
+
+        const onBackgroundSizeChange = ({ mode, size }) => {
+            if (mode in customBgSizes) customBgSizes[mode] = size;
+        };
+
         const currentBgImage = computed(() => {
-            return customBgImage.value || (hasSetup.value ? bgImage : bgImageInitial);
+            if (hasSetup.value) return customBgImages.page || bgImage;
+            return customBgImages.poster || bgImageInitial;
         });
 
-        // Ukuran background (%), dikirim BackgroundSetting dan diterapkan ke halaman.
-        const customBgSize = ref(100);
+        const currentBgSize = computed(() => (hasSetup.value ? customBgSizes.page : customBgSizes.poster));
+
         const backgroundStyle = computed(() => ({
             backgroundImage: `url(${currentBgImage.value})`,
-            backgroundSize: `${customBgSize.value}%`,
+            backgroundSize: `${currentBgSize.value}%`,
         }));
 
         // Panel pengaturan tampilan: tersembunyi sampai tombol Set ditekan.
@@ -1264,8 +1276,10 @@ export default {
             shuffling,
             pageSwitching,
             currentBgImage,
-            customBgImage,
-            customBgSize,
+            customBgImages,
+            customBgSizes,
+            onBackgroundChange,
+            onBackgroundSizeChange,
             backgroundStyle,
             showAppearanceSettings,
             bgImage,

@@ -2,7 +2,7 @@
     <div class="mb-3">
         <label class="form-label fw-semibold">
             <i class="fa fa-image me-1" :class="accentTextClass"></i>
-            Background Halaman
+            Background Poster & Halaman
         </label>
 
         <!-- Kerangka pratinjau: miniatur halaman undian dengan background kandidat -->
@@ -67,7 +67,7 @@
             </div>
         </div>
 
-        <!-- Mode pratinjau -->
+        <!-- Pilih background yang diatur: poster atau halaman undian -->
         <div class="btn-group btn-group-sm w-100 mt-2" role="group">
             <button type="button" class="btn btn-alt-secondary pv-mode-btn" :class="{ active: mode === 'poster' }"
                 @click="mode = 'poster'">
@@ -75,8 +75,11 @@
             </button>
             <button type="button" class="btn btn-alt-secondary pv-mode-btn" :class="{ active: mode === 'page' }"
                 @click="mode = 'page'">
-                <i class="fa fa-table me-1"></i> Halaman Undian
+                <i class="fa fa-table me-1"></i> {{ pageLabel }}
             </button>
+        </div>
+        <div class="text-muted mt-1" style="font-size: 0.7rem;">
+            Poster dan {{ pageLabel }} dapat memakai gambar yang berbeda.
         </div>
 
         <!-- Ukuran background: langsung diterapkan agar mudah disesuaikan -->
@@ -84,7 +87,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label fw-semibold mb-0" style="font-size: 0.8rem;">
                     <i class="fa fa-search-plus me-1" :class="accentTextClass"></i>
-                    Ukuran Background
+                    Ukuran Background {{ activeLabel }}
                 </label>
                 <button type="button" class="btn btn-xs btn-alt-secondary" :disabled="isSizeDefault"
                     @click="resetBackgroundSize">
@@ -93,12 +96,12 @@
             </div>
             <div class="d-flex align-items-center gap-2 mt-1">
                 <input type="range" class="form-range flex-grow-1" :min="MIN_SIZE" :max="MAX_SIZE" step="5"
-                    v-model.number="bgSize">
+                    v-model.number="activeSlot.size">
                 <input type="number" class="form-control form-control-sm" style="width: 78px;" :min="MIN_SIZE"
-                    :max="MAX_SIZE" step="5" v-model.number="bgSize">
+                    :max="MAX_SIZE" step="5" v-model.number="activeSlot.size">
             </div>
             <div class="text-muted mt-1" style="font-size: 0.72rem;">
-                {{ bgSize }}% — perubahan ukuran langsung diterapkan ke halaman.
+                {{ activeSlot.size }}% — perubahan ukuran langsung diterapkan ke halaman.
             </div>
         </div>
 
@@ -106,18 +109,19 @@
             @change="onFilePicked">
 
         <div class="d-grid gap-2 mt-2">
-            <button type="button" class="btn btn-sm" :class="accentBtnClass" :disabled="!candidateBlob"
+            <button type="button" class="btn btn-sm" :class="accentBtnClass" :disabled="!activeSlot.candidateBlob"
                 @click="applyBackground">
-                <i class="fa fa-check me-1"></i> Terapkan Background
+                <i class="fa fa-check me-1"></i> Terapkan Background {{ activeLabel }}
             </button>
             <button type="button" class="btn btn-sm btn-alt-secondary"
-                :disabled="!hasCustom && !candidateBlob && isSizeDefault" @click="resetBackground">
-                <i class="fa fa-undo me-1"></i> Reset ke Default
+                :disabled="!hasCustom && !activeSlot.candidateBlob && isSizeDefault" @click="resetBackground">
+                <i class="fa fa-undo me-1"></i> Reset {{ activeLabel }} ke Default
             </button>
         </div>
 
-        <div v-if="candidateBlob" class="text-muted mt-2" style="font-size: 0.7rem;">
-            <i class="fa fa-file-image me-1"></i>{{ candidateBlob.name || 'gambar' }} · {{ candidateSizeLabel }}
+        <div v-if="activeSlot.candidateBlob" class="text-muted mt-2" style="font-size: 0.7rem;">
+            <i class="fa fa-file-image me-1"></i>{{ activeSlot.candidateBlob.name || 'gambar' }} · {{
+                candidateSizeLabel }}
         </div>
 
         <div class="mt-2 small" :class="statusClass">
@@ -133,7 +137,7 @@
 </template>
 
 <script>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from "vue";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const CANVAS_WIDTH = 1280;
@@ -142,6 +146,7 @@ const DEFAULT_SIZE = 100;
 const MIN_SIZE = 50;
 const MAX_SIZE = 200;
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+const SLOTS = ['poster', 'page'];
 
 // Background disimpan apa adanya (tanpa kompresi) sebagai blob di IndexedDB,
 // karena localStorage tidak mampu menampung gambar beresolusi tinggi.
@@ -228,6 +233,10 @@ export default {
             type: String,
             required: true,
         },
+        posterStorageKey: {
+            type: String,
+            default: '',
+        },
         variant: {
             type: String,
             default: 'undian',
@@ -259,8 +268,14 @@ export default {
         const scale = ref(0.25);
         const loading = ref(true);
 
-        // Ukuran background disimpan per halaman (storageKey + 'Size').
-        const sizeStorageKey = computed(() => `${props.storageKey}Size`);
+        const pageLabel = computed(() => (props.variant === 'grand-prize' ? 'Halaman Grand Prize' : 'Halaman Undian'));
+        const activeLabel = computed(() => (mode.value === 'poster' ? 'Poster' : pageLabel.value));
+
+        // Poster dan halaman undian memakai gambar + ukuran yang terpisah.
+        const slotKeys = computed(() => ({
+            poster: props.posterStorageKey || `${props.storageKey}Poster`,
+            page: props.storageKey,
+        }));
 
         const normalizeSize = (value) => {
             const number = Number(value);
@@ -268,55 +283,73 @@ export default {
             return Math.min(Math.max(Math.round(number), MIN_SIZE), MAX_SIZE);
         };
 
-        const readStoredSize = () => {
+        const readStoredSize = (key) => {
             try {
-                const raw = localStorage.getItem(sizeStorageKey.value);
+                const raw = localStorage.getItem(`${key}Size`);
                 return raw !== null && raw !== '' ? normalizeSize(raw) : DEFAULT_SIZE;
             } catch (e) {
                 return DEFAULT_SIZE;
             }
         };
 
-        // Background tersimpan & kandidat memakai blob + object URL,
-        // tanpa kompresi agar kualitas gambar asli tetap terjaga.
-        const savedBlob = ref(null);
-        const savedUrl = ref('');
-        const candidateBlob = ref(null);
-        const candidateUrl = ref('');
-        const bgSize = ref(readStoredSize());
+        const createSlot = (imageKey) => ({
+            savedBlob: null,
+            savedUrl: '',
+            candidateBlob: null,
+            candidateUrl: '',
+            size: readStoredSize(imageKey),
+        });
 
-        const hasCustom = computed(() => !!savedUrl.value);
-        const isDirty = computed(() => !!candidateBlob.value && candidateBlob.value !== savedBlob.value);
-        const isSizeDefault = computed(() => bgSize.value === DEFAULT_SIZE);
-        const candidateSizeLabel = computed(() => (candidateBlob.value ? formatBytes(candidateBlob.value.size) : ''));
+        // Background per slot memakai blob + object URL, tanpa kompresi
+        // agar kualitas gambar asli tetap terjaga.
+        const slotState = reactive({
+            poster: createSlot(slotKeys.value.poster),
+            page: createSlot(slotKeys.value.page),
+        });
+
+        const activeSlot = computed(() => slotState[mode.value]);
+
+        const hasCustom = computed(() => !!activeSlot.value.savedUrl);
+        const isDirty = computed(() => {
+            const slot = activeSlot.value;
+            return !!slot.candidateBlob && slot.candidateBlob !== slot.savedBlob;
+        });
+        const isSizeDefault = computed(() => activeSlot.value.size === DEFAULT_SIZE);
+        const candidateSizeLabel = computed(() => {
+            const blob = activeSlot.value.candidateBlob;
+            return blob ? formatBytes(blob.size) : '';
+        });
 
         const backgroundForMode = computed(() => {
-            const custom = candidateUrl.value || savedUrl.value;
+            const slot = activeSlot.value;
+            const custom = slot.candidateUrl || slot.savedUrl;
             if (custom) return custom;
             return mode.value === 'poster' ? props.fallbackPoster : props.fallbackPage;
         });
 
         const canvasStyle = computed(() => ({
             backgroundImage: backgroundForMode.value ? `url(${backgroundForMode.value})` : 'none',
-            backgroundSize: `${bgSize.value}%`,
+            backgroundSize: `${activeSlot.value.size}%`,
             transform: `translate(-50%, -50%) scale(${scale.value})`,
         }));
 
-        // Perubahan ukuran langsung dipakai halaman (live preview) dan disimpan.
-        watch(bgSize, (value) => {
-            const normalized = normalizeSize(value);
-            if (normalized !== value) {
-                bgSize.value = normalized;
-                return;
-            }
-            try {
-                localStorage.setItem(sizeStorageKey.value, String(normalized));
-            } catch (e) { /* abaikan */ }
-            emit('size-change', normalized);
+        // Ukuran tiap background (poster & halaman) disimpan terpisah.
+        SLOTS.forEach((slot) => {
+            watch(() => slotState[slot].size, (value) => {
+                const normalized = normalizeSize(value);
+                if (normalized !== value) {
+                    slotState[slot].size = normalized;
+                    return;
+                }
+                try {
+                    localStorage.setItem(`${slotKeys.value[slot]}Size`, String(normalized));
+                } catch (e) { /* abaikan */ }
+                emit('size-change', { mode: slot, size: normalized });
+            });
         });
 
         const resetBackgroundSize = () => {
-            bgSize.value = DEFAULT_SIZE;
+            activeSlot.value.size = DEFAULT_SIZE;
         };
 
         const accentBtnClass = computed(() => props.accent === 'warning' ? 'btn-alt-warning' : 'btn-alt-primary');
@@ -325,9 +358,9 @@ export default {
         const statusText = computed(() => {
             if (error.value) return 'Periksa pesan kesalahan di bawah.';
             if (loading.value) return 'Memuat background tersimpan...';
-            if (isDirty.value) return 'Pratinjau belum diterapkan.';
-            if (hasCustom.value) return 'Background custom aktif.';
-            return 'Menggunakan background bawaan.';
+            if (isDirty.value) return `Background ${activeLabel.value} belum diterapkan.`;
+            if (hasCustom.value) return `Background ${activeLabel.value} custom aktif.`;
+            return `Menggunakan background bawaan (${activeLabel.value}).`;
         });
 
         const statusClass = computed(() => {
@@ -354,16 +387,18 @@ export default {
             }
         };
 
-        const setSavedBlob = (blob) => {
-            revokeUrl(savedUrl.value);
-            savedBlob.value = blob || null;
-            savedUrl.value = blob ? URL.createObjectURL(blob) : '';
+        const setSavedBlob = (slot, blob) => {
+            const state = slotState[slot];
+            revokeUrl(state.savedUrl);
+            state.savedBlob = blob || null;
+            state.savedUrl = blob ? URL.createObjectURL(blob) : '';
         };
 
-        const setCandidateBlob = (blob) => {
-            revokeUrl(candidateUrl.value);
-            candidateBlob.value = blob || null;
-            candidateUrl.value = blob ? URL.createObjectURL(blob) : '';
+        const setCandidateBlob = (slot, blob) => {
+            const state = slotState[slot];
+            revokeUrl(state.candidateUrl);
+            state.candidateBlob = blob || null;
+            state.candidateUrl = blob ? URL.createObjectURL(blob) : '';
         };
 
         const useFile = (file) => {
@@ -379,7 +414,7 @@ export default {
             }
 
             // Tanpa kompresi: file asli dipakai apa adanya agar kualitas tetap.
-            setCandidateBlob(file);
+            setCandidateBlob(mode.value, file);
         };
 
         const pickFile = () => {
@@ -400,42 +435,49 @@ export default {
 
         const applyBackground = async () => {
             error.value = '';
-            if (!candidateBlob.value) {
+            const slot = mode.value;
+            const state = slotState[slot];
+            if (!state.candidateBlob) {
                 error.value = 'Pilih gambar terlebih dahulu.';
                 return;
             }
 
             try {
-                await idbPut(props.storageKey, candidateBlob.value);
+                await idbPut(slotKeys.value[slot], state.candidateBlob);
             } catch (e) {
                 error.value = 'Gagal menyimpan gambar di browser ini. Coba ulangi atau gunakan gambar lain.';
                 return;
             }
 
-            setSavedBlob(candidateBlob.value);
-            emit('change', savedUrl.value);
+            setSavedBlob(slot, state.candidateBlob);
+            emit('change', { mode: slot, url: state.savedUrl });
         };
 
         const resetBackground = async () => {
+            const slot = mode.value;
+            const state = slotState[slot];
+
             try {
-                await idbDelete(props.storageKey);
+                await idbDelete(slotKeys.value[slot]);
             } catch (e) { /* abaikan */ }
 
             // Bersihkan juga data lama (sebelum memakai IndexedDB).
-            try {
-                localStorage.removeItem(props.storageKey);
-            } catch (e) { /* abaikan */ }
+            if (slot === 'page') {
+                try {
+                    localStorage.removeItem(props.storageKey);
+                } catch (e) { /* abaikan */ }
+            }
 
-            setCandidateBlob(null);
-            setSavedBlob(null);
+            setCandidateBlob(slot, null);
+            setSavedBlob(slot, null);
             error.value = '';
-            bgSize.value = DEFAULT_SIZE;
+            state.size = DEFAULT_SIZE;
             if (fileInput.value) fileInput.value.value = '';
-            emit('change', '');
+            emit('change', { mode: slot, url: '' });
         };
 
-        // Background dari versi lama masih berupa data URL di localStorage:
-        // pindahkan ke IndexedDB agar ukuran file tidak terbatas kuota kecil.
+        // Background dari versi lama (data URL di localStorage) dipindah ke IndexedDB
+        // dan dipakai untuk Poster + Halaman sekaligus agar tampilan tidak berubah.
         const migrateLegacyBackground = async () => {
             let legacy = '';
             try {
@@ -447,12 +489,41 @@ export default {
 
             try {
                 const blob = dataUrlToBlob(legacy);
-                await idbPut(props.storageKey, blob);
+                await idbPut(slotKeys.value.page, blob);
+                setSavedBlob('page', blob);
+
+                if (!slotState.poster.savedBlob) {
+                    await idbPut(slotKeys.value.poster, blob);
+                    setSavedBlob('poster', blob);
+
+                    // Samakan ukuran poster dengan ukuran lama (sekali saat migrasi).
+                    if (slotState.poster.size === DEFAULT_SIZE && slotState.page.size !== DEFAULT_SIZE) {
+                        slotState.poster.size = slotState.page.size;
+                    }
+                }
+
                 localStorage.removeItem(props.storageKey);
-                setSavedBlob(blob);
             } catch (e) {
                 // Gagal migrasi: gambar lama tetap ditampilkan agar tidak hilang.
-                savedUrl.value = legacy;
+                slotState.page.savedUrl = legacy;
+            }
+        };
+
+        const loadSlot = async (slot) => {
+            try {
+                const blob = await idbGet(slotKeys.value[slot]);
+                if (blob) {
+                    setSavedBlob(slot, blob);
+                    return;
+                }
+            } catch (e) {
+                error.value = 'Gagal memuat background tersimpan.';
+                return;
+            }
+
+            // Slot halaman memakai kunci lama sebagai sumber migrasi.
+            if (slot === 'page') {
+                await migrateLegacyBackground();
             }
         };
 
@@ -467,26 +538,21 @@ export default {
                 observer.observe(frameEl.value);
             }
 
-            try {
-                const blob = await idbGet(props.storageKey);
-                if (blob) {
-                    setSavedBlob(blob);
-                } else {
-                    await migrateLegacyBackground();
-                }
-            } catch (e) {
-                error.value = 'Gagal memuat background tersimpan.';
-            }
-
+            await Promise.all(SLOTS.map(loadSlot));
             loading.value = false;
-            emit('change', savedUrl.value);
-            emit('size-change', bgSize.value);
+
+            SLOTS.forEach((slot) => {
+                emit('change', { mode: slot, url: slotState[slot].savedUrl });
+                emit('size-change', { mode: slot, size: slotState[slot].size });
+            });
         });
 
         onBeforeUnmount(() => {
             if (observer) observer.disconnect();
-            revokeUrl(candidateUrl.value);
-            revokeUrl(savedUrl.value);
+            SLOTS.forEach((slot) => {
+                revokeUrl(slotState[slot].candidateUrl);
+                revokeUrl(slotState[slot].savedUrl);
+            });
         });
 
         return {
@@ -495,11 +561,12 @@ export default {
             dragging,
             mode,
             error,
-            candidateBlob,
+            activeSlot,
+            activeLabel,
+            pageLabel,
             candidateSizeLabel,
             hasCustom,
             isDirty,
-            bgSize,
             isSizeDefault,
             canvasStyle,
             accentBtnClass,
