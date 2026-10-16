@@ -199,6 +199,80 @@
                 </div>
             </div>
         </aside>
+
+        <!-- PANEL PENGATURAN TAMPILAN: panel terpisah di kanan (tombol di samping pembuka sidebar).
+             Isinya salinan Pengaturan Tampilan dari sidebar dan memakai state yang sama. -->
+        <aside id="side-overlay-settings" :class="{ 'is-open': showDisplaySettings }">
+            <div class="content-header">
+                <div class="link-fx text-body-color-dark fw-semibold fs-sm">
+                    <i class="fa fa-fw fa-sliders-h"></i> Pengaturan Tampilan
+                </div>
+                <button type="button" class="btn btn-sm btn-alt-danger ms-auto"
+                    @click="showDisplaySettings = false">
+                    <i class="fa fa-fw fa-times"></i>
+                </button>
+            </div>
+            <div class="content-side">
+                <div class="block pull-x">
+                    <div class="block-content block-content-full">
+
+                        <!-- Konten pengaturan tampilan: langsung tampil tanpa tombol Set -->
+                        <div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="fa fa-expand-arrows-alt me-1 text-warning"></i>
+                                    Ukuran Tombol Start
+                                </label>
+                                <div class="d-flex align-items-center gap-2">
+                                    <input type="range" class="form-range flex-grow-1" min="80"
+                                        max="220" step="5" v-model.number="drawButtonSize">
+                                    <input type="number" class="form-control form-control-sm"
+                                        style="width: 78px;" min="80" max="220" step="5"
+                                        v-model.number="drawButtonSize">
+                                </div>
+                                <div class="text-muted mt-1" style="font-size:0.72rem;">
+                                    {{ drawButtonSize }}%
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label fw-semibold mb-0">
+                                        <i class="fa fa-arrows-up-down me-1 text-warning"></i>
+                                        Jarak Undian dari Atas
+                                    </label>
+                                    <button type="button" class="btn btn-xs btn-alt-secondary"
+                                        @click="resetUndianTopOffset">
+                                        Reset
+                                    </button>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 mt-1">
+                                    <input type="range" class="form-range flex-grow-1" min="0"
+                                        max="500" step="5" v-model.number="undianTopOffset">
+                                    <input type="number" class="form-control form-control-sm"
+                                        style="width: 84px;" min="0" max="500" step="5"
+                                        v-model.number="undianTopOffset">
+                                </div>
+                                <div class="text-muted mt-1" style="font-size:0.72rem;">
+                                    {{ undianTopOffset }} px
+                                </div>
+                            </div>
+
+                            <!-- BACKGROUND POSTER & HALAMAN GRAND PRIZE -->
+                            <BackgroundSetting storage-key="grandPrizeBackgroundImage"
+                                poster-storage-key="grandPrizeBackgroundPosterImage"
+                                variant="grand-prize" accent="warning"
+                                :fallback-poster="bgImageInitial" :fallback-page="bgImage"
+                                @change="onBackgroundChange"
+                                @size-change="onBackgroundSizeChange" />
+
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </aside>
+
         <header id="page-header" style="background-color: rgba(0, 0, 0, 0) !important;">
             <div class="content-header">
                 <div class="space-x-1">
@@ -211,8 +285,12 @@
                         <i v-else class="fa fa-fw fa-arrow-left"></i>
                     </button>
                     <button type="button" class="btn btn-sm btn-alt-secondary" data-toggle="layout"
-                        data-action="side_overlay_toggle">
+                        data-action="side_overlay_toggle" @click="showDisplaySettings = false">
                         <i class="fa fa-fw fa-stream"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-alt-warning ms-1 page-nav-btn"
+                        title="Pengaturan Tampilan" @click="toggleDisplaySettings">
+                        <i class="fa fa-fw fa-sliders-h"></i>
                     </button>
                 </div>
             </div>
@@ -411,6 +489,37 @@
     padding-top: 370px;
 }
 
+/* Panel Pengaturan Tampilan: bentuk & animasi mengikuti sidebar #side-overlay */
+#side-overlay-settings {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1035;
+    width: 100%;
+    background-color: #fff;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-transform: translateX(100%) translateY(0) translateZ(0);
+    transform: translateX(100%) translateY(0) translateZ(0);
+    transition: transform 0.26s cubic-bezier(0.47, 0, 0.745, 0.715), -webkit-transform 0.26s cubic-bezier(0.47, 0, 0.745, 0.715);
+    will-change: transform;
+}
+
+#side-overlay-settings.is-open {
+    -webkit-transform: translateX(0) translateY(0) translateZ(0);
+    transform: translateX(0) translateY(0) translateZ(0);
+}
+
+@media (min-width: 992px) {
+    #side-overlay-settings {
+        width: 320px;
+        box-shadow: 0 0 25px rgba(0, 0, 0, 0.15);
+        -webkit-transform: translateX(110%) translateY(0) translateZ(0);
+        transform: translateX(110%) translateY(0) translateZ(0);
+    }
+}
+
 .page-nav-btn {
     min-width: 34px;
     min-height: 31px;
@@ -586,6 +695,22 @@ export default {
 
         // Panel pengaturan tampilan: tersembunyi sampai tombol Set ditekan.
         const showAppearanceSettings = ref(false);
+
+        // Panel "Pengaturan Tampilan" terpisah (tombol di kanan pembuka sidebar).
+        // Memakai state yang sama dengan bagian di sidebar, jadi selalu sinkron.
+        const showDisplaySettings = ref(false);
+
+        const toggleDisplaySettings = () => {
+            showDisplaySettings.value = !showDisplaySettings.value;
+
+            // Tutup sidebar utama agar tidak bertumpuk dengan panel.
+            if (showDisplaySettings.value) {
+                const el = document.getElementById('page-container');
+                if (el) {
+                    el.classList.remove('side-overlay-o');
+                }
+            }
+        };
 
         const form = reactive({
             prize_ids: [],
@@ -1046,7 +1171,9 @@ export default {
             onBackgroundChange,
             onBackgroundSizeChange,
             backgroundStyle,
-            showAppearanceSettings
+            showAppearanceSettings,
+            showDisplaySettings,
+            toggleDisplaySettings
         };
     }
 }
