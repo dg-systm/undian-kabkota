@@ -4,32 +4,27 @@
     "isEntry": true,
     "src": "resources/css/app.css"
   },
-  "resources/images/background1-min.webp": {
-    "file": "assets/background1-min-2ff29640.webp",
-    "src": "resources/images/background1-min.webp"
+  "resources/images/Gebyar Hadiah Pajak Grobogan.webp": {
+    "file": "assets/Gebyar Hadiah Pajak Grobogan-98313b52.webp",
+    "src": "resources/images/Gebyar Hadiah Pajak Grobogan.webp"
   },
-  "resources/images/background1-min3.webp": {
-    "file": "assets/background1-min3-d9a1f7fc.webp",
-    "src": "resources/images/background1-min3.webp"
-  },
-  "resources/images/grandprize.webp": {
-    "file": "assets/grandprize-3e78aaf7.webp",
-    "src": "resources/images/grandprize.webp"
+  "resources/images/Grobogan Civic Celebration Banner.webp": {
+    "file": "assets/Grobogan Civic Celebration Banner-c8e2aaa5.webp",
+    "src": "resources/images/Grobogan Civic Celebration Banner.webp"
   },
   "resources/js/app.css": {
-    "file": "assets/app-cdfc33ce.css",
+    "file": "assets/app-3590d2a6.css",
     "src": "resources/js/app.css"
   },
   "resources/js/app.js": {
     "assets": [
-      "assets/background1-min-2ff29640.webp",
-      "assets/background1-min3-d9a1f7fc.webp",
-      "assets/grandprize-3e78aaf7.webp"
+      "assets/Grobogan Civic Celebration Banner-c8e2aaa5.webp",
+      "assets/Gebyar Hadiah Pajak Grobogan-98313b52.webp"
     ],
     "css": [
-      "assets/app-cdfc33ce.css"
+      "assets/app-3590d2a6.css"
     ],
-    "file": "assets/app-9ebde663.js",
+    "file": "assets/app-85684717.js",
     "isEntry": true,
     "src": "resources/js/app.js"
   }

@@ -438,8 +438,8 @@ import { ref, reactive, onMounted, onUnmounted, computed, watch, inject } from "
 import axios from "axios";
 import confetti from 'canvas-confetti';
 import BackgroundSetting from './BackgroundSetting.vue';
-import bgImage from '@/../images/grandprize.webp'
-import bgImageInitial from '@/../images/background1-min3.webp'
+import bgImage from '@/../images/Grobogan Civic Celebration Banner.webp'
+import bgImageInitial from '@/../images/Gebyar Hadiah Pajak Grobogan.webp'
 
 export default {
     components: {
