@@ -126,70 +126,6 @@
                                                 </div>
                                             </div>
 
-                                            <!-- PENGATURAN TAMPILAN: tampil setelah tombol Set ditekan -->
-                                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <label class="form-label fw-semibold mb-0">
-                                                    <i class="fa fa-sliders-h me-1 text-warning"></i>
-                                                    Pengaturan Tampilan
-                                                </label>
-                                                <button type="button" class="btn btn-xs btn-alt-warning"
-                                                    @click="showAppearanceSettings = !showAppearanceSettings">
-                                                    <i class="fa me-1" :class="showAppearanceSettings ? 'fa-times' : 'fa-cog'"></i>
-                                                    {{ showAppearanceSettings ? 'Tutup' : 'Set' }}
-                                                </button>
-                                            </div>
-
-                                            <div v-show="showAppearanceSettings">
-                                                <div class="mb-3">
-                                                    <label class="form-label fw-semibold">
-                                                        <i class="fa fa-expand-arrows-alt me-1 text-warning"></i>
-                                                        Ukuran Tombol Start
-                                                    </label>
-                                                    <div class="d-flex align-items-center gap-2">
-                                                        <input type="range" class="form-range flex-grow-1" min="80"
-                                                            max="220" step="5" v-model.number="drawButtonSize">
-                                                        <input type="number" class="form-control form-control-sm"
-                                                            style="width: 78px;" min="80" max="220" step="5"
-                                                            v-model.number="drawButtonSize">
-                                                    </div>
-                                                    <div class="text-muted mt-1" style="font-size:0.72rem;">
-                                                        {{ drawButtonSize }}%
-                                                    </div>
-                                                </div>
-
-                                                <div class="mb-3">
-                                                    <div class="d-flex justify-content-between align-items-center">
-                                                        <label class="form-label fw-semibold mb-0">
-                                                            <i class="fa fa-arrows-up-down me-1 text-warning"></i>
-                                                            Jarak Undian dari Atas
-                                                        </label>
-                                                        <button type="button" class="btn btn-xs btn-alt-secondary"
-                                                            @click="resetUndianTopOffset">
-                                                            Reset
-                                                        </button>
-                                                    </div>
-                                                    <div class="d-flex align-items-center gap-2 mt-1">
-                                                        <input type="range" class="form-range flex-grow-1" min="0"
-                                                            max="500" step="5" v-model.number="undianTopOffset">
-                                                        <input type="number" class="form-control form-control-sm"
-                                                            style="width: 84px;" min="0" max="500" step="5"
-                                                            v-model.number="undianTopOffset">
-                                                    </div>
-                                                    <div class="text-muted mt-1" style="font-size:0.72rem;">
-                                                        {{ undianTopOffset }} px
-                                                    </div>
-                                                </div>
-
-                                                <!-- BACKGROUND POSTER & HALAMAN GRAND PRIZE -->
-                                                <BackgroundSetting storage-key="grandPrizeBackgroundImage"
-                                                    poster-storage-key="grandPrizeBackgroundPosterImage"
-                                                    variant="grand-prize" accent="warning"
-                                                    :fallback-poster="bgImageInitial" :fallback-page="bgImage"
-                                                    @change="onBackgroundChange"
-                                                    @size-change="onBackgroundSizeChange" />
-
-                                            </div>
-
                                         </div>
                                     </div>
                                 </div>
@@ -200,8 +136,8 @@
             </div>
         </aside>
 
-        <!-- PANEL PENGATURAN TAMPILAN: panel terpisah di kanan (tombol di samping pembuka sidebar).
-             Isinya salinan Pengaturan Tampilan dari sidebar dan memakai state yang sama. -->
+        <!-- PANEL PENGATURAN TAMPILAN: dibuka lewat tombol setting di samping pembuka sidebar.
+             Pengaturan tampilan hanya ada di panel ini. -->
         <aside id="side-overlay-settings" :class="{ 'is-open': showDisplaySettings }">
             <div class="content-header">
                 <div class="link-fx text-body-color-dark fw-semibold fs-sm">
@@ -693,11 +629,8 @@ export default {
             backgroundSize: `${currentBgSize.value}%`,
         }));
 
-        // Panel pengaturan tampilan: tersembunyi sampai tombol Set ditekan.
-        const showAppearanceSettings = ref(false);
-
         // Panel "Pengaturan Tampilan" terpisah (tombol di kanan pembuka sidebar).
-        // Memakai state yang sama dengan bagian di sidebar, jadi selalu sinkron.
+        // Pengaturan tampilan kini hanya ada di panel ini.
         const showDisplaySettings = ref(false);
 
         const toggleDisplaySettings = () => {
@@ -1171,7 +1104,6 @@ export default {
             onBackgroundChange,
             onBackgroundSizeChange,
             backgroundStyle,
-            showAppearanceSettings,
             showDisplaySettings,
             toggleDisplaySettings
         };

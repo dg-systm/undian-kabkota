@@ -184,135 +184,6 @@
                                                 </div>
                                             </div>
 
-                                            <!-- PENGATURAN TAMPILAN: tampil setelah tombol Set ditekan -->
-                                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <label class="form-label fw-semibold mb-0">
-                                                    <i class="fa fa-sliders-h me-1 text-primary"></i>
-                                                    Pengaturan Tampilan
-                                                </label>
-                                                <button type="button" class="btn btn-xs btn-alt-primary"
-                                                    @click="showAppearanceSettings = !showAppearanceSettings">
-                                                    <i class="fa me-1" :class="showAppearanceSettings ? 'fa-times' : 'fa-cog'"></i>
-                                                    {{ showAppearanceSettings ? 'Tutup' : 'Set' }}
-                                                </button>
-                                            </div>
-
-                                            <div v-show="showAppearanceSettings">
-                                                <div class="mb-3">
-                                                    <label class="form-label fw-semibold">
-                                                        <i class="fa fa-expand-arrows-alt me-1 text-primary"></i>
-                                                        Ukuran Tombol Start
-                                                    </label>
-                                                    <div class="d-flex align-items-center gap-2">
-                                                        <input type="range" class="form-range flex-grow-1" min="80"
-                                                            max="220" step="5" v-model.number="drawButtonSize">
-                                                        <input type="number" class="form-control form-control-sm"
-                                                            style="width: 78px;" min="80" max="220" step="5"
-                                                            v-model.number="drawButtonSize">
-                                                    </div>
-                                                    <div class="text-muted mt-1" style="font-size: 0.72rem;">
-                                                        {{ drawButtonSize }}%
-                                                    </div>
-                                                </div>
-
-                                                <div class="mb-3">
-                                                    <div class="d-flex justify-content-between align-items-center">
-                                                        <label class="form-label fw-semibold mb-0">
-                                                            <i class="fa fa-arrows-up-down me-1 text-primary"></i>
-                                                            Jarak Undian dari Atas
-                                                        </label>
-                                                        <button type="button" class="btn btn-xs btn-alt-secondary"
-                                                            @click="resetUndianTopOffset">
-                                                            Reset
-                                                        </button>
-                                                    </div>
-                                                    <div class="d-flex align-items-center gap-2 mt-1">
-                                                        <input type="range" class="form-range flex-grow-1" min="0"
-                                                            max="500" step="5" v-model.number="undianTopOffset">
-                                                        <input type="number" class="form-control form-control-sm"
-                                                            style="width: 84px;" min="0" max="500" step="5"
-                                                            v-model.number="undianTopOffset">
-                                                    </div>
-                                                    <div class="text-muted mt-1" style="font-size: 0.72rem;">
-                                                        {{ undianTopOffset }} px
-                                                    </div>
-                                                </div>
-
-                                                <div class="mb-3">
-                                                    <div class="d-flex justify-content-between align-items-center">
-                                                        <label class="form-label fw-semibold mb-0">
-                                                            <i class="fa fa-table me-1 text-primary"></i>
-                                                            Tabel Undian
-                                                        </label>
-                                                        <button type="button" class="btn btn-xs btn-alt-secondary"
-                                                            @click="resetTableAppearance">
-                                                            Reset
-                                                        </button>
-                                                    </div>
-                                                    <div class="d-flex align-items-center gap-2 mt-1">
-                                                        <input type="range" class="form-range flex-grow-1" min="70"
-                                                            max="180" step="5" v-model.number="tableSize">
-                                                        <input type="number" class="form-control form-control-sm"
-                                                            style="width: 84px;" min="70" max="180" step="5"
-                                                            v-model.number="tableSize">
-                                                    </div>
-                                                    <div class="text-muted mt-1" style="font-size: 0.72rem;">
-                                                        Ukuran tabel undian: {{ tableSize }}%
-                                                    </div>
-                                                    <div class="row g-2 mt-1">
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Latar Kartu</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tableCardBg">
-                                                        </div>
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Garis Tabel</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tableBorderColor">
-                                                        </div>
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Judul Kecamatan</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tableTitleColor">
-                                                        </div>
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Latar Header</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tableHeaderBg">
-                                                        </div>
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Teks Header</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tableHeaderColor">
-                                                        </div>
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Latar Isi Tabel</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tableBodyBg">
-                                                        </div>
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Teks Isi Tabel</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tableTextColor">
-                                                        </div>
-                                                        <div class="col-6">
-                                                            <label class="form-label fs-xs mb-0">Teks Hadiah</label>
-                                                            <input type="color" class="form-control form-control-sm p-1"
-                                                                style="height: 34px;" v-model="tablePrizeColor">
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <!-- BACKGROUND POSTER & HALAMAN UNDIAN -->
-                                                <BackgroundSetting storage-key="undianBackgroundImage" variant="undian"
-                                                    poster-storage-key="undianBackgroundPosterImage"
-                                                    accent="primary" :preview-style="tableAppearanceStyle"
-                                                    :fallback-poster="bgImageInitial" :fallback-page="bgImage"
-                                                    @change="onBackgroundChange"
-                                                    @size-change="onBackgroundSizeChange" />
-
-                                            </div>
-
                                         </div>
                                     </div>
                                 </div>
@@ -323,8 +194,8 @@
             </div>
         </aside>
 
-        <!-- PANEL PENGATURAN TAMPILAN: panel terpisah di kanan (tombol di samping pembuka sidebar).
-             Isinya salinan Pengaturan Tampilan dari sidebar dan memakai state yang sama. -->
+        <!-- PANEL PENGATURAN TAMPILAN: dibuka lewat tombol setting di samping pembuka sidebar.
+             Pengaturan tampilan hanya ada di panel ini. -->
         <aside id="side-overlay-settings" :class="{ 'is-open': showDisplaySettings }">
             <div class="content-header">
                 <div class="link-fx text-body-color-dark fw-semibold fs-sm">
@@ -964,11 +835,8 @@ export default {
             backgroundSize: `${currentBgSize.value}%`,
         }));
 
-        // Panel pengaturan tampilan: tersembunyi sampai tombol Set ditekan.
-        const showAppearanceSettings = ref(false);
-
         // Panel "Pengaturan Tampilan" terpisah (tombol di kanan pembuka sidebar).
-        // Memakai state yang sama dengan bagian di sidebar, jadi selalu sinkron.
+        // Pengaturan tampilan kini hanya ada di panel ini.
         const showDisplaySettings = ref(false);
 
         const toggleDisplaySettings = () => {
@@ -1471,7 +1339,6 @@ export default {
             onBackgroundChange,
             onBackgroundSizeChange,
             backgroundStyle,
-            showAppearanceSettings,
             showDisplaySettings,
             toggleDisplaySettings,
             bgImage,
