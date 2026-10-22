@@ -32,9 +32,21 @@ Artinya tinggal **satu langkah wajib** (mengaktifkan TCP/IP port 1433 secara per
   ```
   `DB_USERNAME`/`DB_PASSWORD` dikosongkan = **Windows Authentication** (login memakai akun Windows Anda).
 - `.env.example` → didokumentasikan (SQL Server aktif, MySQL sebagai komentar).
+- `.env` → `APP_ID_LOKASI` dipakai untuk validasi silang ID Samsat pada pengundian. Contoh Grobogan: `APP_ID_LOKASI=8`, sehingga aplikasi memanggil `EXEC getWinner '8', '<kode_kecamatan>', <jumlah>` dan menolak pengundian bila mapping wilayah menghasilkan ID lain.
 - `config/database.php` → blok `sqlsrv` mengaktifkan `encrypt` + `trust_server_certificate` dari env.
 - `database/migrations/2026_06_04_000001_add_prize_category_id_to_draws_table.php` → `->after('prize_id')` dihapus karena tidak didukung SQL Server.
-- Stored procedure `getWinner` sudah otomatis dibuat versi SQL Server oleh migrasi `2026_06_18_095935_create_function_get_winner.php`.
+- Stored procedure `getWinner` sudah otomatis dibuat versi SQL Server oleh migrasi `2026_06_18_095935_create_function_get_winner.php` (definisi terpusat di `app/Support/GetWinnerProcedure.php`).
+- Migrasi `2026_10_22_000000_update_get_winner_with_kecamatan.php` memastikan database lama ikut memakai signature terbaru:
+
+  ```sql
+  EXEC getWinner @id_lokasi_samsat, @id_kecamatan, @length
+
+  -- contoh: 1 pemenang dari Kecamatan Purwodadi (0801), Samsat Grobogan (8)
+  EXEC getWinner '8', '0801', 1
+  ```
+
+  - `@id_lokasi_samsat = 999` → mode global (Grand Prize), `@id_kecamatan` diabaikan.
+  - `@id_kecamatan = ''` → semua kecamatan pada Samsat tersebut.
 
 ---
 

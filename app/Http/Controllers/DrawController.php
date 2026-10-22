@@ -99,7 +99,7 @@ class DrawController extends Controller
         }
         shuffle($prizePool);
 
-        $spWinners = collect($this->drawingService->getWinner(999, $required));
+        $spWinners = $this->drawingService->getWinnerCandidates(999, '', $required, 5);
 
         if ($spWinners->count() < $required) {
             return response()->json([

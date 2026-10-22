@@ -6,6 +6,7 @@ use App\Models\Kendaraan;
 use App\Support\Wilayah;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Support\Facades\Cache;
 
 class StatistikKendaraanWidget extends BaseWidget
 {
@@ -25,7 +26,13 @@ class StatistikKendaraanWidget extends BaseWidget
         $totalKelurahan = $info['kelurahan_count'];
 
         // Total kendaraan dibatasi ke Samsat wilayah aktif.
-        $totalKendaraan = $this->kendaraanWilayahQuery($info['samsat_ids'])->count();
+        // Hasil count di-cache sebentar karena tabel kendaraan berisi ratusan
+        // ribu baris dan datanya tidak berubah saat aplikasi dipakai.
+        $totalKendaraan = Cache::remember(
+            'widget.kendaraan_count.' . md5(implode(',', $info['samsat_ids'])),
+            now()->addMinutes(10),
+            fn (): int => $this->kendaraanWilayahQuery($info['samsat_ids'])->count()
+        );
 
         return [
             Stat::make('Total Kendaraan', number_format($totalKendaraan, 0, ',', '.'))

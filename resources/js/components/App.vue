@@ -38,6 +38,25 @@
                                                 <div v-if="wilayah.error" class="text-danger small mt-1">
                                                     <i class="fa fa-exclamation-triangle me-1"></i>{{ wilayah.error }}
                                                 </div>
+                                                <div class="d-flex justify-content-between small mt-1">
+                                                    <span class="text-muted">ID Lokasi (APP_ID_LOKASI)</span>
+                                                    <strong>
+                                                        {{ wilayah.idLokasi.length ? wilayah.idLokasi.join(', ') : 'Otomatis' }}
+                                                    </strong>
+                                                </div>
+                                                <div v-if="wilayah.idLokasiMismatch.length"
+                                                    class="text-danger small mt-1">
+                                                    <i class="fa fa-exclamation-triangle me-1"></i>
+                                                    Mapping wilayah memuat ID lokasi lain:
+                                                    {{ wilayah.idLokasiMismatch.join(', ') }}.
+                                                    Sesuaikan APP_ID_LOKASI di .env.
+                                                </div>
+                                                <div v-if="wilayah.idLokasiTidakTerpakai.length"
+                                                    class="text-warning small mt-1">
+                                                    <i class="fa fa-info-circle me-1"></i>
+                                                    APP_ID_LOKASI berisi ID yang tidak dipakai mapping:
+                                                    {{ wilayah.idLokasiTidakTerpakai.join(', ') }}.
+                                                </div>
                                             </div>
 
                                             <!-- PILIH KECAMATAN -->
@@ -196,12 +215,15 @@
 
         <!-- PANEL PENGATURAN TAMPILAN: dibuka lewat tombol setting di samping pembuka sidebar.
              Pengaturan tampilan hanya ada di panel ini. -->
-        <aside id="side-overlay-settings" :class="{ 'is-open': showDisplaySettings }">
+        <aside id="side-overlay-settings" ref="settingsPanel" aria-label="Pengaturan Tampilan"
+            :class="{ 'is-open': showDisplaySettings }">
             <div class="content-header">
-                <div class="link-fx text-body-color-dark fw-semibold fs-sm">
-                    <i class="fa fa-fw fa-sliders-h"></i> Pengaturan Tampilan
+                <div class="settings-panel-title">
+                    <i class="fa fa-fw fa-sliders-h"></i>
+                    <span>Pengaturan Tampilan</span>
                 </div>
-                <button type="button" class="btn btn-sm btn-alt-danger ms-auto"
+                <button type="button" class="btn btn-sm btn-alt-danger settings-panel-close"
+                    title="Tutup" aria-label="Tutup pengaturan tampilan"
                     @click="showDisplaySettings = false">
                     <i class="fa fa-fw fa-times"></i>
                 </button>
@@ -347,7 +369,7 @@
                         <i class="fa fa-fw fa-stream"></i>
                     </button>
                     <button type="button" class="btn btn-sm btn-alt-primary ms-1 page-nav-btn"
-                        title="Pengaturan Tampilan" @click="toggleDisplaySettings">
+                        title="Pengaturan Tampilan" data-settings-toggle @click="toggleDisplaySettings">
                         <i class="fa fa-fw fa-sliders-h"></i>
                     </button>
                 </div>
@@ -473,7 +495,7 @@
                                     id="btnDraw"
                                     :class="(shuffling ? 'btn-warning' : (drawing ? 'btn-danger' : 'btn-success'))"
                                     :style="drawButtonStyle" @click="drawHandle"
-                                    v-bind:disabled="disableTrigger || shuffling" autofocus>
+                                    v-bind:disabled="shuffling || (!drawing && disableTrigger)" autofocus>
                                     {{ shuffling ? 'Sedang Mengacak' : (drawing ? 'Stop Pengundian!' : 'Start Pengundian!')
                                     }}
                                 </button>
@@ -651,14 +673,62 @@
     right: 0;
     bottom: 0;
     z-index: 1035;
+    display: flex;
+    flex-direction: column;
     width: 100%;
     background-color: #fff;
-    overflow-y: auto;
+    overflow: hidden;
     -webkit-overflow-scrolling: touch;
     -webkit-transform: translateX(100%) translateY(0) translateZ(0);
     transform: translateX(100%) translateY(0) translateZ(0);
     transition: transform 0.26s cubic-bezier(0.47, 0, 0.745, 0.715), -webkit-transform 0.26s cubic-bezier(0.47, 0, 0.745, 0.715);
     will-change: transform;
+}
+
+#side-overlay-settings .content-header {
+    flex: 0 0 auto;
+    height: 60px;
+    padding: 0 18px;
+    gap: 12px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+#side-overlay-settings .settings-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: #343a40;
+    white-space: nowrap;
+}
+
+#side-overlay-settings .settings-panel-title span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#side-overlay-settings .settings-panel-close {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+#side-overlay-settings>.content-side {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 18px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+#side-overlay-settings .content-side .block {
+    margin-bottom: 0;
+}
+
+#side-overlay-settings .block-content {
+    padding: 0;
 }
 
 #side-overlay-settings.is-open {
@@ -699,7 +769,7 @@
 </style>
 
 <script>
-import { ref, reactive, onMounted, computed, watch, inject } from "vue";
+import { ref, reactive, onMounted, onUnmounted, computed, watch, inject } from "vue";
 import axios from "axios";
 import confetti from 'canvas-confetti';
 import BackgroundSetting from './BackgroundSetting.vue';
@@ -721,9 +791,27 @@ export default {
         const platJateng = ['H', 'K', 'AD', 'G', 'R', 'AA'];
         const disableTrigger = ref(true);
 
+        // Batas waktu pengundian. Tujuannya agar tombol "Stop Pengundian!"
+        // tidak pernah terkunci permanen bila request ke server lambat/menggantung.
+        const DRAW_START_DELAY = 3000;
+        const DRAW_REQUEST_TIMEOUT = 15000;
+        const DRAW_WATCHDOG_TIMEOUT = DRAW_REQUEST_TIMEOUT + 2000;
+
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
         const updateDisableTrigger = () => {
             disableTrigger.value = shuffling.value || requestPending.value || winnersDetermined.value;
         };
+
+        // Lepas kunci "Sedang Mengacak" apa pun kondisi request-nya.
+        const unlockShuffle = () => {
+            shuffling.value = false;
+            updateDisableTrigger();
+        };
+
+        // Penanda sesi undian: hasil request dari sesi lama tidak boleh
+        // menimpa state sesi terbaru.
+        let drawSession = 0;
 
         // --- Wilayah & Pengaturan state ---
         const wilayah = reactive({
@@ -731,6 +819,9 @@ export default {
             kecamatan: [],
             kecamatanSamsat: {},
             samsatIds: [],
+            idLokasi: [],
+            idLokasiMismatch: [],
+            idLokasiTidakTerpakai: [],
             winnersPerPage: Number(inject('winnersPerPage')) || 5,
             error: '',
         });
@@ -838,6 +929,7 @@ export default {
         // Panel "Pengaturan Tampilan" terpisah (tombol di kanan pembuka sidebar).
         // Pengaturan tampilan kini hanya ada di panel ini.
         const showDisplaySettings = ref(false);
+        const settingsPanel = ref(null);
 
         const toggleDisplaySettings = () => {
             showDisplaySettings.value = !showDisplaySettings.value;
@@ -849,6 +941,20 @@ export default {
                     el.classList.remove('side-overlay-o');
                 }
             }
+        };
+
+        // Tutup panel saat pengguna mengklik di luar panel, sama seperti
+        // sidebar Pengaturan Grand Prize (#side-overlay) yang memakai page overlay.
+        const closeDisplaySettingsOnOutsideClick = (event) => {
+            if (!showDisplaySettings.value) return;
+
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            if (settingsPanel.value?.contains(target)) return;
+            // Jangan tutup saat tombol pembuka panel yang diklik.
+            if (target.closest('[data-settings-toggle]')) return;
+
+            showDisplaySettings.value = false;
         };
 
         const drawButtonStyle = computed(() => {
@@ -1019,6 +1125,9 @@ export default {
 
         const settingError = computed(() => {
             if (wilayah.error) return wilayah.error;
+            if (wilayah.idLokasiMismatch.length) {
+                return `APP_ID_LOKASI tidak cocok dengan mapping wilayah (ID lain: ${wilayah.idLokasiMismatch.join(', ')}). Periksa .env.`;
+            }
             if (!wilayah.kecamatan.length) return 'Daftar kecamatan belum tersedia. Periksa APP_KABKOTA di .env.';
             if (selectedKecamatan.value.length === 0) return 'Pilih minimal 1 kecamatan.';
             if (!selectedCategoryId.value) return 'Pilih kategori hadiah.';
@@ -1110,26 +1219,48 @@ export default {
             clearInterval(row.interval.seri);
         };
 
-        const pickWinner = async () => {
+        const pickWinner = async (session) => {
             requestPending.value = true;
             updateDisableTrigger();
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), DRAW_REQUEST_TIMEOUT);
+
             try {
                 const response = await axios.post("api/draw/pick", {
                     prize_ids: form.prize_ids,
                     samsats: form.samsats,
                     per_samsat: form.winnersPerPage,
                     samsat_ids: form.samsatIdMap,
+                }, {
+                    signal: controller.signal,
+                    timeout: DRAW_REQUEST_TIMEOUT,
                 });
 
-                winnerList.value = response.data.data;
+                // Abaikan hasil dari sesi undian yang sudah tidak berlaku.
+                if (session !== drawSession) return false;
+
+                winnerList.value = Array.isArray(response.data?.data) ? response.data.data : [];
                 getOptionsPrize();
+                return true;
             } catch (error) {
-                undianList.value.forEach(row => stopDrawingRow(row));
-                alert(error.response?.data.message || 'Terjadi kesalahan saat pengundian.');
-                console.error('Gagal update:', error.response?.data);
+                if (session === drawSession) {
+                    undianList.value.forEach(row => stopDrawingRow(row));
+
+                    const timedOut = error.code === 'ERR_CANCELED' || error.code === 'ECONNABORTED';
+                    alert(timedOut
+                        ? 'Pengundian melebihi batas waktu. Silakan coba lagi.'
+                        : (error.response?.data.message || 'Terjadi kesalahan saat pengundian.'));
+                }
+                console.error('Gagal update:', error.response?.data || error);
+                return false;
             } finally {
-                requestPending.value = false;
-                updateDisableTrigger();
+                clearTimeout(timeoutId);
+
+                if (session === drawSession) {
+                    requestPending.value = false;
+                    updateDisableTrigger();
+                }
             }
         }
 
@@ -1162,24 +1293,71 @@ export default {
         }
 
         const drawHandle = async () => {
-            if (disableTrigger.value) return;
+            // Saat pengundian berjalan tombol Stop harus selalu bisa diklik,
+            // jadi kunci hanya berlaku sebelum pengundian dimulai.
+            if (disableTrigger.value && !drawing.value) return;
 
             if (!drawing.value) {
+                // Sesi baru: pastikan penanda hasil undian sebelumnya tidak
+                // ikut mengunci tombol pada pengundian berikutnya.
+                drawSession += 1;
+                const session = drawSession;
+
                 drawing.value = true;
+                winnersDetermined.value = false;
                 shuffling.value = true;
                 updateDisableTrigger();
                 undianList.value.forEach(row => startDrawingRow(row));
 
-                const animationDelay = new Promise(resolve => setTimeout(resolve, 3000));
-                await Promise.all([animationDelay, pickWinner()]);
+                const startedAt = Date.now();
+                let picked = false;
 
-                shuffling.value = false;
-                updateDisableTrigger();
+                try {
+                    // Watchdog memastikan alur selalu selesai walau request
+                    // macet, sehingga tombol Stop tidak terkunci selamanya.
+                    const result = await Promise.race([
+                        pickWinner(session),
+                        delay(DRAW_WATCHDOG_TIMEOUT).then(() => false),
+                    ]);
+                    picked = result === true;
+                } catch (error) {
+                    console.error('Gagal memulai pengundian:', error);
+                    picked = false;
+                }
+
+                // Animasi pengacakan tetap tampil minimal DRAW_START_DELAY.
+                const elapsed = Date.now() - startedAt;
+                if (elapsed < DRAW_START_DELAY) {
+                    await delay(DRAW_START_DELAY - elapsed);
+                }
+
+                if (session !== drawSession) return;
+
+                if (!picked) {
+                    // Undian gagal / melewati batas waktu: hentikan animasi,
+                    // buka kunci tombol, dan biarkan pengguna mencoba lagi.
+                    undianList.value.forEach(row => stopDrawingRow(row));
+                    drawing.value = false;
+                    winnersDetermined.value = false;
+                    requestPending.value = false;
+                    // Abaikan respons yang datang terlambat dari sesi ini.
+                    drawSession += 1;
+                }
+
+                unlockShuffle();
                 // keep drawing true until user stops
             } else {
+                // Data pemenang belum siap -> jangan proses hasil kosong.
+                if (requestPending.value) return;
+
                 undianList.value.forEach(row => stopDrawingRow(row));
                 parseWinner();
                 markDrawn(form.samsats);
+                // Setelah diundi, kecamatan tersebut otomatis tidak terpilih lagi
+                // di sidebar agar undian berikutnya tidak mengulang kecamatan yang sama.
+                selectedKecamatan.value = selectedKecamatan.value.filter(
+                    id => !form.samsats.includes(id)
+                );
                 drawing.value = false;
                 winnersDetermined.value = true;
                 updateDisableTrigger();
@@ -1206,6 +1384,11 @@ export default {
         };
 
         const saveSetting = () => {
+            if (drawing.value || shuffling.value) {
+                alert('Hentikan pengundian terlebih dahulu sebelum menyimpan pengaturan.');
+                return;
+            }
+
             if (settingError.value) {
                 alert(settingError.value);
                 return;
@@ -1235,8 +1418,12 @@ export default {
                 el.classList.remove('side-overlay-o');
             }
 
+            // Siap untuk pengundian baru: buka kunci dari hasil undian sebelumnya.
+            winnersDetermined.value = false;
+            requestPending.value = false;
+            drawSession += 1; // batalkan respons lama yang mungkin masih berjalan
             initUndianList();
-            disableTrigger.value = false;
+            updateDisableTrigger();
         };
 
         const trigger = () => {
@@ -1273,6 +1460,9 @@ export default {
                 wilayah.kecamatan = response.data.kecamatan || [];
                 wilayah.kecamatanSamsat = response.data.kecamatan_samsat || {};
                 wilayah.samsatIds = response.data.samsat_ids || [];
+                wilayah.idLokasi = response.data.id_lokasi || [];
+                wilayah.idLokasiMismatch = response.data.id_lokasi_mismatch || [];
+                wilayah.idLokasiTidakTerpakai = response.data.id_lokasi_tidak_terpakai || [];
                 wilayah.error = response.data.error || '';
 
                 loadDrawn();
@@ -1290,8 +1480,13 @@ export default {
         };
 
         onMounted(async () => {
+            document.addEventListener('click', closeDisplaySettingsOnOutsideClick);
             getOptionsPrize();
             getWilayah();
+        });
+
+        onUnmounted(() => {
+            document.removeEventListener('click', closeDisplaySettingsOnOutsideClick);
         });
 
         return {
@@ -1340,6 +1535,7 @@ export default {
             onBackgroundSizeChange,
             backgroundStyle,
             showDisplaySettings,
+            settingsPanel,
             toggleDisplaySettings,
             bgImage,
             bgImageInitial,

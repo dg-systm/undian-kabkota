@@ -10,11 +10,22 @@ Buka file `.env`, lalu isi `APP_KABKOTA` sesuai wilayah tempat aplikasi dipakai
 
 ```env
 APP_KABKOTA="Kabupaten Demak"
+APP_ID_LOKASI=8
 APP_WINNERS_PER_PAGE=5
 ```
 
 - `APP_KABKOTA` → Kabupaten/Kota aktif. Sidebar **"Pilih Kecamatan"** dan
   statistik dashboard otomatis mengikuti wilayah ini.
+- `APP_ID_LOKASI` → ID lokasi/Samsat pada kolom `kendaraans.id_lokasi` untuk
+  wilayah aktif. Dipakai sebagai **validasi silang** agar pengundian tidak
+  memanggil SP `getWinner` dengan ID Samsat yang salah.
+  - Contoh: Kabupaten Grobogan = `8`, sehingga SP dipanggil sebagai
+    `EXEC getWinner '8', '<kode_kecamatan>', <jumlah>`.
+  - Bila wilayah memiliki lebih dari satu Samsat, isi semuanya dengan pemisah
+    koma, mis. `APP_ID_LOKASI=1,2,3`.
+  - Kosongkan bila tidak ingin validasi otomatis.
+  - Nilai ini juga tampil di sidebar sebagai **"ID Lokasi (APP_ID_LOKASI)"**
+    untuk pengecekan cepat sebelum pengundian.
 - `APP_WINNERS_PER_PAGE` → default jumlah pemenang per kecamatan dalam 1 halaman
   (masih bisa diubah dari sidebar saat aplikasi berjalan).
 

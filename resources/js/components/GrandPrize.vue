@@ -138,12 +138,15 @@
 
         <!-- PANEL PENGATURAN TAMPILAN: dibuka lewat tombol setting di samping pembuka sidebar.
              Pengaturan tampilan hanya ada di panel ini. -->
-        <aside id="side-overlay-settings" :class="{ 'is-open': showDisplaySettings }">
+        <aside id="side-overlay-settings" ref="settingsPanel" aria-label="Pengaturan Tampilan"
+            :class="{ 'is-open': showDisplaySettings }">
             <div class="content-header">
-                <div class="link-fx text-body-color-dark fw-semibold fs-sm">
-                    <i class="fa fa-fw fa-sliders-h"></i> Pengaturan Tampilan
+                <div class="settings-panel-title">
+                    <i class="fa fa-fw fa-sliders-h"></i>
+                    <span>Pengaturan Tampilan</span>
                 </div>
-                <button type="button" class="btn btn-sm btn-alt-danger ms-auto"
+                <button type="button" class="btn btn-sm btn-alt-danger settings-panel-close"
+                    title="Tutup" aria-label="Tutup pengaturan tampilan"
                     @click="showDisplaySettings = false">
                     <i class="fa fa-fw fa-times"></i>
                 </button>
@@ -225,7 +228,7 @@
                         <i class="fa fa-fw fa-stream"></i>
                     </button>
                     <button type="button" class="btn btn-sm btn-alt-warning ms-1 page-nav-btn"
-                        title="Pengaturan Tampilan" @click="toggleDisplaySettings">
+                        title="Pengaturan Tampilan" data-settings-toggle @click="toggleDisplaySettings">
                         <i class="fa fa-fw fa-sliders-h"></i>
                     </button>
                 </div>
@@ -246,8 +249,8 @@
                                                 <th style="width: 12%;">Nomor Polisi</th>
                                                 <th style="width: 5%;">Roda</th>
                                                 <th style="width: 16%;">Nama Pemilik</th>
-                                                <th style="width: 40%;">Alamat</th>
-                                                <th style="width: 12%;">Lokasi</th>
+                                                <th style="width: 36%;">Alamat</th>
+                                                <th style="width: 16%;">Kecamatan</th>
                                                 <th style="width: 14%;">Hadiah</th>
                                             </tr>
                                         </thead>
@@ -262,8 +265,7 @@
                                                     </td>
                                                     <td class="table-fixed-col col-nama">{{ (item.nama || '-') }}
                                                     </td>
-                                                    <td class="table-fixed-col col-alamat">{{ (item.alamat || '-')
-                                                        }}</td>
+                                                    <td class="table-fixed-col col-alamat">{{ maskAlamat(item.alamat) }}</td>
                                                     <td class="table-fixed-col col-lokasi">{{ (item.lokasi || '-')
                                                         }}</td>
                                                 </template>
@@ -271,8 +273,7 @@
                                                     <td class="table-fixed-col col-roda">{{ item.roda || '-' }}</td>
                                                     <td class="table-fixed-col col-nama">{{ (item.nama || '-') }}
                                                     </td>
-                                                    <td class="table-fixed-col col-alamat">{{ (item.alamat || '-')
-                                                        }}</td>
+                                                    <td class="table-fixed-col col-alamat">{{ maskAlamat(item.alamat) }}</td>
                                                     <td class="table-fixed-col col-lokasi">{{ (item.lokasi || '-')
                                                         }}</td>
                                                 </template>
@@ -432,14 +433,62 @@
     right: 0;
     bottom: 0;
     z-index: 1035;
+    display: flex;
+    flex-direction: column;
     width: 100%;
     background-color: #fff;
-    overflow-y: auto;
+    overflow: hidden;
     -webkit-overflow-scrolling: touch;
     -webkit-transform: translateX(100%) translateY(0) translateZ(0);
     transform: translateX(100%) translateY(0) translateZ(0);
     transition: transform 0.26s cubic-bezier(0.47, 0, 0.745, 0.715), -webkit-transform 0.26s cubic-bezier(0.47, 0, 0.745, 0.715);
     will-change: transform;
+}
+
+#side-overlay-settings .content-header {
+    flex: 0 0 auto;
+    height: 60px;
+    padding: 0 18px;
+    gap: 12px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+#side-overlay-settings .settings-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: #343a40;
+    white-space: nowrap;
+}
+
+#side-overlay-settings .settings-panel-title span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#side-overlay-settings .settings-panel-close {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+#side-overlay-settings>.content-side {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 18px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+#side-overlay-settings .content-side .block {
+    margin-bottom: 0;
+}
+
+#side-overlay-settings .block-content {
+    padding: 0;
 }
 
 #side-overlay-settings.is-open {
@@ -504,10 +553,22 @@ export default {
         const platJateng = ['H', 'K', 'AD', 'G', 'R', 'AA'];
         const disableTrigger = ref(true);
 
+        // Batas waktu pengundian agar tombol Stop tidak terkunci bila server
+        // lambat atau request menggantung.
+        const DRAW_START_DELAY = 3000;
+        const DRAW_REQUEST_TIMEOUT = 15000;
+        const DRAW_WATCHDOG_TIMEOUT = DRAW_REQUEST_TIMEOUT + 2000;
+
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
         const quantity = ref(1);
         const selectedCategoryId = ref('');
         const selectedPrizeIds = ref([]);
         const prizeOptions = ref([]);
+
+        // Data kecamatan aktif (id -> nama) untuk kolom Kecamatan.
+        const kecamatanNames = ref({});
+        const kecamatanList = ref([]);
 
         const extractGram = (name) => {
             const cleaned = String(name || '').replace(',', '.');
@@ -517,6 +578,33 @@ export default {
 
         const sortPrizeByWeight = (a, b) => {
             return extractGram(b.name) - extractGram(a.name);
+        };
+
+        // Samarkan bagian tengah ke belakang alamat: hanya bagian depan
+        // alamat yang terlihat, sisanya diganti tanda bintang.
+        const ALAMAT_VISIBLE_CHARS = 16;
+        const maskAlamat = (alamat) => {
+            const text = String(alamat ?? '').trim().replace(/\s+/g, ' ');
+            if (!text) return '-';
+            // Saat animasi pengacakan, alamat berupa tanda tanya: biarkan.
+            if (/^\?+$/.test(text)) return text;
+            if (text.length <= ALAMAT_VISIBLE_CHARS) return text;
+
+            let front = text.slice(0, ALAMAT_VISIBLE_CHARS);
+            const lastSpace = front.lastIndexOf(' ');
+            if (lastSpace >= 8) front = front.slice(0, lastSpace);
+
+            return `${front.trimEnd()}***`;
+        };
+
+        // Nama kecamatan dari id_kecamatan pada data kendaraan.
+        const resolveKecamatan = (item) => {
+            const id = item?.id_kecamatan;
+            if (id !== null && id !== undefined && id !== '') {
+                const nama = kecamatanNames.value[String(id)];
+                return nama || item?.lokasi || String(id);
+            }
+            return item?.lokasi || '-';
         };
 
         const prizeCategories = computed(() => {
@@ -632,6 +720,7 @@ export default {
         // Panel "Pengaturan Tampilan" terpisah (tombol di kanan pembuka sidebar).
         // Pengaturan tampilan kini hanya ada di panel ini.
         const showDisplaySettings = ref(false);
+        const settingsPanel = ref(null);
 
         const toggleDisplaySettings = () => {
             showDisplaySettings.value = !showDisplaySettings.value;
@@ -643,6 +732,20 @@ export default {
                     el.classList.remove('side-overlay-o');
                 }
             }
+        };
+
+        // Tutup panel saat pengguna mengklik di luar panel, sama seperti
+        // sidebar Pengaturan Grand Prize (#side-overlay) yang memakai page overlay.
+        const closeDisplaySettingsOnOutsideClick = (event) => {
+            if (!showDisplaySettings.value) return;
+
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            if (settingsPanel.value?.contains(target)) return;
+            // Jangan tutup saat tombol pembuka panel yang diklik.
+            if (target.closest('[data-settings-toggle]')) return;
+
+            showDisplaySettings.value = false;
         };
 
         const form = reactive({
@@ -672,7 +775,9 @@ export default {
         });
 
         const drawButtonDisabled = computed(() => {
-            return disableTrigger.value || shuffling.value || drawFinished.value;
+            // Saat pengundian berjalan tombol Stop harus selalu bisa diklik,
+            // jadi kunci hanya berlaku sebelum pengundian dimulai.
+            return (disableTrigger.value && !drawing.value) || shuffling.value || drawFinished.value;
         });
 
         const drawButtonStyle = computed(() => {
@@ -844,7 +949,11 @@ export default {
             }, 140);
 
             row.interval.lokasi = setInterval(() => {
-                row.lokasi = getRandomQuestionMarks(6, 16);
+                // Animasi kolom Kecamatan memakai nama kecamatan acak.
+                const names = kecamatanList.value;
+                row.lokasi = names.length
+                    ? names[Math.floor(Math.random() * names.length)]
+                    : getRandomQuestionMarks(6, 16);
             }, 200);
         };
 
@@ -864,24 +973,38 @@ export default {
         const pickWinner = async () => {
             disableTrigger.value = true;
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), DRAW_REQUEST_TIMEOUT);
+
             try {
                 const response = await axios.post("api/draw/pick", {
                     prize_ids: form.prize_ids,
                     quantity: parseInt(form.quantity),
                     is_global: true,
                     is_demo: false,
+                }, {
+                    signal: controller.signal,
+                    timeout: DRAW_REQUEST_TIMEOUT,
                 });
 
                 winnerList.value = response.data.data;
                 winnersReady.value = true;
                 getOptionsPrize();
                 disableTrigger.value = false;
+                return true;
             } catch (error) {
                 disableTrigger.value = false;
                 resetDrawState();
                 undianList.value.forEach(row => stopDrawingRow(row));
-                alert(error.response?.data.message || 'Terjadi kesalahan saat pengundian.');
-                console.error('Gagal update:', error.response?.data);
+
+                const timedOut = error.code === 'ERR_CANCELED' || error.code === 'ECONNABORTED';
+                alert(timedOut
+                    ? 'Pengundian melebihi batas waktu. Silakan coba lagi.'
+                    : (error.response?.data.message || 'Terjadi kesalahan saat pengundian.'));
+                console.error('Gagal update:', error.response?.data || error);
+                return false;
+            } finally {
+                clearTimeout(timeoutId);
             }
         };
 
@@ -907,7 +1030,7 @@ export default {
                     nama: item.nama,
                     alamat: item.alamat,
                     roda: item.roda,
-                    lokasi: item.lokasi,
+                    lokasi: resolveKecamatan(item),
                     prize: item.prize || { name: selectedPrizeLabel.value },
                     // determine prize category level for sorting (higher = bigger prize)
                     prize_level: item.prize?.prize_category?.level ?? (
@@ -949,14 +1072,44 @@ export default {
 
                 // keep button disabled and text changed for at least 3 seconds
                 clearShufflingTimeout();
-                shufflingTimeout.value = setTimeout(unlockStopButton, 3000);
+                shufflingTimeout.value = setTimeout(unlockStopButton, DRAW_START_DELAY);
 
-                await pickWinner();
+                const startedAt = Date.now();
+                let picked = false;
 
+                try {
+                    // Watchdog mencegah tombol Stop terkunci permanen bila
+                    // request ke server macet.
+                    picked = await Promise.race([
+                        pickWinner(),
+                        delay(DRAW_WATCHDOG_TIMEOUT).then(() => false),
+                    ]);
+                } catch (error) {
+                    console.error('Gagal memulai pengundian:', error);
+                    picked = false;
+                }
+
+                // Pastikan animasi pengacakan tampil minimal DRAW_START_DELAY.
+                const elapsed = Date.now() - startedAt;
+                if (elapsed < DRAW_START_DELAY) {
+                    await delay(DRAW_START_DELAY - elapsed);
+                }
+
+                if (!picked) {
+                    // Gagal / melewati batas waktu: bersihkan state dan
+                    // buka kunci tombol agar bisa dicoba lagi.
+                    resetDrawState();
+                    return;
+                }
+
+                clearShufflingTimeout();
                 if (!drawing.value) return;
                 unlockStopButton();
             } else {
                 // stop
+                // Jangan proses hasil sebelum data pemenang benar-benar siap.
+                if (!winnersReady.value) return;
+
                 undianList.value.forEach(row => stopDrawingRow(row));
                 parseWinner();
                 disableTrigger.value = true;
@@ -1051,8 +1204,28 @@ export default {
             }
         };
 
+        // Muat daftar kecamatan aktif untuk kolom Kecamatan.
+        const getWilayah = async () => {
+            try {
+                const response = await axios.get('/api/get-data/wilayah');
+                const list = Array.isArray(response.data?.kecamatan) ? response.data.kecamatan : [];
+                const map = {};
+                list.forEach(kec => {
+                    if (kec?.id !== undefined && kec?.id !== null) {
+                        map[String(kec.id)] = kec.nama;
+                    }
+                });
+                kecamatanNames.value = map;
+                kecamatanList.value = list.map(kec => kec.nama).filter(Boolean);
+            } catch (error) {
+                console.error('Gagal memuat data wilayah:', error);
+            }
+        };
+
         onMounted(async () => {
+            document.addEventListener('click', closeDisplaySettingsOnOutsideClick);
             getOptionsPrize();
+            getWilayah();
             window.addEventListener('keydown', spaceKeyHandler);
         });
 
@@ -1060,6 +1233,7 @@ export default {
             clearShufflingTimeout();
             undianList.value.forEach(row => stopDrawingRow(row));
             window.removeEventListener('keydown', spaceKeyHandler);
+            document.removeEventListener('click', closeDisplaySettingsOnOutsideClick);
         });
 
         return {
@@ -1093,6 +1267,7 @@ export default {
             undianTopOffset,
             resetUndianTopOffset,
             goToRegularDraw,
+            maskAlamat,
 
             disableTrigger,
             trigger,
@@ -1105,6 +1280,7 @@ export default {
             onBackgroundSizeChange,
             backgroundStyle,
             showDisplaySettings,
+            settingsPanel,
             toggleDisplaySettings
         };
     }

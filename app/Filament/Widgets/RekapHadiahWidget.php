@@ -21,6 +21,7 @@ class RekapHadiahWidget extends BaseWidget
             ->query(
                 PrizeCategory::query()
                     ->withSum('prizes', 'quantity')
+                    ->with(['prizes' => fn ($query) => $query->withCount('winners')])
                     ->orderBy('level')
             )
             ->columns([
@@ -44,7 +45,7 @@ class RekapHadiahWidget extends BaseWidget
                     ->alignCenter()
                     ->badge()
                     ->state(fn (PrizeCategory $record): int => (int) $record->prizes
-                        ->sum(fn ($prize) => $prize->available_quantity))
+                        ->sum(fn ($prize) => $prize->quantity - $prize->winners_count))
                     ->color(fn ($state): string => ((int) $state) > 0 ? 'success' : 'danger'),
             ])
             ->paginated(false);

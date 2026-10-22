@@ -6,6 +6,7 @@ use App\Models\Draw;
 use App\Models\Kendaraan;
 use App\Models\Prize;
 use App\Models\Winner;
+use App\Support\Wilayah;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -13,25 +14,74 @@ class DrawingService
 {
     protected ?array $samsatIdMap = null;
 
-    public function getWinnerMySql(int $idLokasi, int $totalWinner = 5)
+    public function getWinnerMySql(int $idLokasi, ?string $idKecamatan, int $totalWinner = 5)
     {
-        return DB::select('CALL getWinner(?, ?)', [$idLokasi, $totalWinner]);
+        return DB::select('CALL getWinner(?, ?, ?)', [
+            $idLokasi,
+            $idKecamatan ?? '',
+            $totalWinner,
+        ]);
     }
 
-    public function getWinnerSqlsrv(int $idLokasi, int $totalWinner = 5)
+    public function getWinnerSqlsrv(int $idLokasi, ?string $idKecamatan, int $totalWinner = 5)
     {
-        return DB::select('EXEC getWinner ?, ?', [$idLokasi, $totalWinner]);
+        return DB::select('EXEC getWinner ?, ?, ?', [
+            $idLokasi,
+            $idKecamatan ?? '',
+            $totalWinner,
+        ]);
     }
 
-    public function getWinner(int $idLokasi, int $totalWinner = 5)
+    /**
+     * Panggil SP getWinner sesuai signature database:
+     * getWinner(@id_lokasi_samsat, @id_kecamatan, @length).
+     *
+     * @param  string|null  $idKecamatan  Kode kecamatan (mis. "0801"); '' = semua kecamatan.
+     */
+    public function getWinner(int $idLokasi, ?string $idKecamatan = '', int $totalWinner = 5)
     {
         $driver = DB::connection()->getDriverName();
 
         return match ($driver) {
-            'mysql', 'mariadb' => $this->getWinnerMySql($idLokasi, $totalWinner),
-            'sqlsrv'           => $this->getWinnerSqlsrv($idLokasi, $totalWinner),
-            default => $this->getWinnerMySql($idLokasi, $totalWinner),
+            'mysql', 'mariadb' => $this->getWinnerMySql($idLokasi, $idKecamatan, $totalWinner),
+            'sqlsrv'           => $this->getWinnerSqlsrv($idLokasi, $idKecamatan, $totalWinner),
+            default => $this->getWinnerMySql($idLokasi, $idKecamatan, $totalWinner),
         };
+    }
+
+    /**
+     * Ambil kandidat pemenang dari SP sampai jumlah yang diminta terpenuhi.
+     *
+     * SP mengambil sampel acak dari rentang ID kendaraan, sehingga untuk
+     * kecamatan dengan populasi kecil satu pemanggilan bisa mengembalikan
+     * lebih sedikit dari yang diminta. Pemanggilan diulang beberapa kali
+     * tanpa mengubah isi SP.
+     */
+    public function getWinnerCandidates(int $idLokasi, ?string $idKecamatan, int $required, int $maxAttempts = 10): Collection
+    {
+        $required = max($required, 1);
+        $collected = collect();
+        $emptyAttempts = 0;
+
+        for ($attempt = 0; $attempt < $maxAttempts && $collected->count() < $required; $attempt++) {
+            $rows = collect($this->getWinner($idLokasi, $idKecamatan, $required));
+            $before = $collected->count();
+
+            $collected = $collected
+                ->merge($rows)
+                ->unique('id')
+                ->values();
+
+            if ($collected->count() === $before) {
+                if (++$emptyAttempts >= 3) {
+                    break;
+                }
+            } else {
+                $emptyAttempts = 0;
+            }
+        }
+
+        return $collected;
     }
 
     public function getSamsatId(string $samsatName): ?int
@@ -109,8 +159,19 @@ class DrawingService
                 ];
             }
 
+            $configError = $this->validateConfiguredSamsatIds([$samsat => $samsatIds]);
+
+            if ($configError !== null) {
+                $draw?->delete();
+
+                return [
+                    'message' => $configError,
+                    'status'  => 422,
+                ];
+            }
+
             $spWinners = collect($samsatIds)
-                ->flatMap(fn($samsatId) => $this->getWinner($samsatId, $totalWinnerPerSamsat))
+                ->flatMap(fn($samsatId) => $this->getWinnerCandidates($samsatId, '', $totalWinnerPerSamsat))
                 ->unique('id')
                 ->shuffle()
                 ->take($totalWinnerPerSamsat)
@@ -194,7 +255,10 @@ class DrawingService
 
     /**
      * Pengundian per lokasi (mis. per Kecamatan) dengan pemetaan lokasi -> ID Samsat.
-     * Semua pemenang diambil dari gabungan Samsat terkait lalu dibagikan rata ke tiap lokasi.
+     *
+     * Setiap kecamatan diundi langsung melalui SP getWinner(id_lokasi, id_kecamatan, length)
+     * sehingga pemenang benar-benar berasal dari kecamatan yang dipilih. Hasil antar
+     * kecamatan digabung tanpa duplikasi lalu dipetakan ke daftar hadiah.
      */
     protected function pickByLocations(
         array $prizeIds,
@@ -205,20 +269,96 @@ class DrawingService
         array $samsatIdsByLocation
     ): array {
         $required = $perLocation * count($locations);
+        $totalAvailable = $prizes->sum(fn($prize) => $prize->available_quantity);
 
-        $samsatIds = collect($locations)
-            ->flatMap(fn($location) => $samsatIdsByLocation[$location] ?? $this->getSamsatIds($location))
-            ->map(fn($id) => (int) $id)
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($samsatIds->isEmpty()) {
+        if ($totalAvailable < $required) {
             return [
-                'message' => 'Tidak ada Samsat yang cocok untuk lokasi/kecamatan yang dipilih.',
+                'message' => "Total stok hadiah yang dipilih ({$totalAvailable}) kurang dari jumlah pemenang yang dibutuhkan ({$required}).",
                 'status'  => 422,
             ];
         }
+
+        $samsatIdsByLocation = $this->resolveSamsatIdsByLocation($locations, $samsatIdsByLocation);
+
+        $missingLocation = collect($locations)
+            ->first(fn($location) => empty($samsatIdsByLocation[$location] ?? []));
+
+        if ($missingLocation !== null) {
+            return [
+                'message' => "Samsat untuk kecamatan {$missingLocation} tidak ditemukan pada konfigurasi wilayah.",
+                'status'  => 422,
+            ];
+        }
+
+        $configError = $this->validateConfiguredSamsatIds($samsatIdsByLocation);
+
+        if ($configError !== null) {
+            return [
+                'message' => $configError,
+                'status'  => 422,
+            ];
+        }
+
+        // Ambil kandidat per kecamatan sesuai SP.
+        $pickedByLocation = [];
+        $pickedIds = [];
+        $usedIds = [];
+
+        foreach ($locations as $location) {
+            $candidates = collect();
+
+            foreach ($samsatIdsByLocation[$location] as $samsatId) {
+                $candidates = $candidates->merge(
+                    $this->getWinnerCandidates((int) $samsatId, (string) $location, $perLocation)
+                );
+            }
+
+            $candidates = $candidates
+                ->reject(fn($row) => in_array((int) $row->id, $usedIds, true))
+                ->unique(fn($row) => (int) $row->id)
+                ->values();
+
+            if ($candidates->count() < $perLocation) {
+                return [
+                    'message' => "Tidak cukup kendaraan tersedia di Kecamatan {$location}. Tersedia: {$candidates->count()}, dibutuhkan: {$perLocation}.",
+                    'status'  => 422,
+                ];
+            }
+
+            $locationPicks = $candidates->take($perLocation)->values();
+            $pickedByLocation[$location] = $locationPicks;
+
+            foreach ($locationPicks as $row) {
+                $id = (int) $row->id;
+                $pickedIds[] = $id;
+                $usedIds[] = $id;
+            }
+        }
+
+        if (count($pickedIds) < $required) {
+            return [
+                'message' => 'Hasil SP tidak valid atau mengandung kendaraan duplikat.',
+                'status'  => 422,
+            ];
+        }
+
+        if (Winner::whereIn('kendaraan_id', $pickedIds)->exists()) {
+            return [
+                'message' => 'Hasil SP mengandung kendaraan yang sudah pernah menang.',
+                'status'  => 422,
+            ];
+        }
+
+        $vehicles = Kendaraan::whereIn('id', $pickedIds)->get()->keyBy('id');
+
+        if ($vehicles->count() < $required) {
+            return [
+                'message' => 'Hasil SP tidak cocok dengan data kendaraan.',
+                'status'  => 422,
+            ];
+        }
+
+        $prizePool = $this->buildPrizePool($prizes, $required);
 
         $draw = null;
         if (!$isDemo) {
@@ -229,75 +369,23 @@ class DrawingService
             ]);
         }
 
-        // Ambil kandidat pemenang dari seluruh Samsat terkait.
-        $candidates = collect();
-        foreach ($samsatIds as $samsatId) {
-            $candidates = $candidates->merge(
-                collect($this->getWinner($samsatId, max($required, $perLocation)))
-            );
-        }
-
-        $candidates = $candidates->unique('id')->shuffle()->values();
-
-        if ($candidates->count() < $required) {
-            $draw?->delete();
-
-            return [
-                'message' => "Tidak cukup kendaraan tersedia. Tersedia: {$candidates->count()}, dibutuhkan: {$required}.",
-                'status'  => 422,
-            ];
-        }
-
-        $picked = $candidates->take($required)->values();
-        $pickedIds = $picked
-            ->pluck('id')
-            ->map(fn($id) => (int) $id)
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($pickedIds->count() < $required) {
-            $draw?->delete();
-
-            return [
-                'message' => 'Hasil SP tidak valid atau mengandung kendaraan duplikat.',
-                'status'  => 422,
-            ];
-        }
-
-        if (Winner::whereIn('kendaraan_id', $pickedIds)->exists()) {
-            $draw?->delete();
-
-            return [
-                'message' => 'Hasil SP mengandung kendaraan yang sudah pernah menang.',
-                'status'  => 422,
-            ];
-        }
-
-        $vehicles = Kendaraan::whereIn('id', $pickedIds)->get()->keyBy('id');
-
-        if ($vehicles->count() < $required) {
-            $draw?->delete();
-
-            return [
-                'message' => 'Hasil SP tidak cocok dengan data kendaraan.',
-                'status'  => 422,
-            ];
-        }
-
-        $prizePool = $this->buildPrizePool($prizes, $required);
-
         $selectedVehicles = [];
         $index = 0;
+
         foreach ($locations as $location) {
-            for ($i = 0; $i < $perLocation; $i++) {
-                if (!isset($pickedIds[$index])) {
-                    break 2;
+            foreach ($pickedByLocation[$location] as $row) {
+                $vehicle = $vehicles[(int) $row->id] ?? null;
+
+                if (!$vehicle) {
+                    $draw?->delete();
+
+                    return [
+                        'message' => 'Hasil SP tidak cocok dengan data kendaraan.',
+                        'status'  => 422,
+                    ];
                 }
 
-                $vehicle = $vehicles[$pickedIds[$index]];
                 $vehicle->lokasi = $location;
-
                 $prizeId = $prizePool[$index] ?? $prizeIds[0];
 
                 if (!$isDemo && $draw) {
@@ -317,6 +405,106 @@ class DrawingService
         }
 
         return $response;
+    }
+
+    /**
+     * Pastikan setiap lokasi/kecamatan punya daftar ID Samsat.
+     *
+     * Urutan sumber:
+     * 1. Pemetaan yang dikirim front-end (kecamatan -> [id_lokasi]).
+     * 2. config/coordinator.php melalui App\Support\Wilayah.
+     * 3. Data kendaraan pada kecamatan tersebut.
+     */
+    protected function resolveSamsatIdsByLocation(array $locations, array $samsatIdsByLocation): array
+    {
+        $resolved = [];
+        $wilayah = null;
+
+        foreach ($locations as $location) {
+            $ids = collect($samsatIdsByLocation[$location] ?? [])
+                ->map(fn($id) => (int) $id)
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($ids->isEmpty()) {
+                $ids = collect($this->configuredSamsatIds());
+            }
+
+            if ($ids->isEmpty()) {
+                $wilayah ??= Wilayah::find(config('wilayah.active'));
+                $samsatId = $wilayah['kecamatan_samsat'][(string) $location] ?? null;
+
+                if ($samsatId !== null) {
+                    $ids = collect([(int) $samsatId]);
+                }
+            }
+
+            if ($ids->isEmpty()) {
+                $ids = Kendaraan::where('id_kecamatan', (string) $location)
+                    ->distinct()
+                    ->pluck('id_lokasi')
+                    ->map(fn($id) => (int) $id)
+                    ->filter()
+                    ->unique()
+                    ->values();
+            }
+
+            $resolved[$location] = $ids->all();
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * ID lokasi/Samsat yang dikonfigurasi pada APP_ID_LOKASI.
+     *
+     * @return array<int, int>
+     */
+    protected function configuredSamsatIds(): array
+    {
+        return collect(config('wilayah.id_lokasi', []))
+            ->map(fn($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Validasi silang ID Samsat hasil mapping dengan APP_ID_LOKASI.
+     *
+     * Bila APP_ID_LOKASI diisi, seluruh ID Samsat yang dipakai harus termasuk
+     * di dalamnya. Ini mencegah pengundian memakai id_lokasi yang salah.
+     *
+     * @param  array<string, array<int, int>>  $samsatIdsByLocation
+     */
+    protected function validateConfiguredSamsatIds(array $samsatIdsByLocation): ?string
+    {
+        $configured = $this->configuredSamsatIds();
+
+        if (empty($configured)) {
+            return null;
+        }
+
+        foreach ($samsatIdsByLocation as $location => $samsatIds) {
+            $samsatIds = collect($samsatIds)
+                ->map(fn($id) => (int) $id)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            $unexpected = array_values(array_diff($samsatIds, $configured));
+
+            if (!empty($unexpected)) {
+                return 'APP_ID_LOKASI (' . implode(',', $configured) . ') tidak cocok dengan Samsat untuk '
+                    . "kecamatan/lokasi {$location} (id_lokasi " . implode(',', $samsatIds) . '). '
+                    . 'Periksa kembali APP_ID_LOKASI pada .env dan mapping wilayah.';
+            }
+        }
+
+        return null;
     }
 
     protected function buildPrizePool(Collection $prizes, int $required): array

@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\AvatarProviders\LocalAvatarProvider;
+use App\Filament\FontProviders\LocalFontProvider;
 use App\Filament\Widgets\AccountKabkotaWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -28,6 +30,8 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login(CustomLogin::class)
+            ->defaultAvatarProvider(LocalAvatarProvider::class)
+            ->font('Inter', provider: LocalFontProvider::class)
             ->colors([
                 'primary' => Color::Amber,
             ])

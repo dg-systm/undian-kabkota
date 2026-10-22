@@ -1,0 +1,34 @@
+/* Font Inter lokal (offline) untuk panel Filament.
+   Memakai file woff2 yang sudah ada di public/codebase/fonts/inter,
+   sehingga tidak perlu mengunduh font dari fonts.bunny.net. */
+@font-face {
+    font-family: Inter;
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/codebase/fonts/inter/inter-v18-latin-regular.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: Inter;
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("/codebase/fonts/inter/inter-v18-latin-500.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: Inter;
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("/codebase/fonts/inter/inter-v18-latin-600.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: Inter;
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("/codebase/fonts/inter/inter-v18-latin-700.woff2") format("woff2");
+}

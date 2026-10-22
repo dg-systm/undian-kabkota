@@ -11,7 +11,7 @@ class ApiController extends Controller
 {
     public function prizeAll()
     {
-        return response()->json(Prize::with('prize_category')->get(), 200);
+        return response()->json(Prize::with('prize_category')->withCount('winners')->get(), 200);
     }
 
     public function locationsAll()
@@ -37,6 +37,13 @@ class ApiController extends Controller
     {
         $active = config('wilayah.active');
         $winnersPerPage = (int) config('wilayah.winners_per_page', 5);
+        $idLokasi = collect(config('wilayah.id_lokasi', []))
+            ->map(fn($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         $info = Wilayah::find($active);
 
         if (!$info['found']) {
@@ -45,11 +52,22 @@ class ApiController extends Controller
                 'kecamatan'        => [],
                 'kecamatan_samsat' => (object) [],
                 'samsat_ids'       => [],
+                'id_lokasi'        => $idLokasi,
+                'id_lokasi_mismatch' => [],
+                'id_lokasi_tidak_terpakai' => [],
                 'winners_per_page' => $winnersPerPage,
                 'error'            => "Kabupaten/Kota \"{$active}\" belum terdaftar pada mapping wilayah. "
                     . 'Silakan sesuaikan nilai APP_KABKOTA pada file .env.',
             ], 200);
         }
+
+        // Validasi silang APP_ID_LOKASI dengan mapping Samsat wilayah aktif.
+        $idLokasiMismatch = empty($idLokasi)
+            ? []
+            : array_values(array_diff($info['samsat_ids'], $idLokasi));
+        $idLokasiTidakTerpakai = empty($idLokasi)
+            ? []
+            : array_values(array_diff($idLokasi, $info['samsat_ids']));
 
         return response()->json([
             'kabkota'          => $info['name'],
@@ -58,6 +76,9 @@ class ApiController extends Controller
             'kecamatan'        => $info['kecamatan'],
             'kecamatan_samsat' => $info['kecamatan_samsat'],
             'samsat_ids'       => $info['samsat_ids'],
+            'id_lokasi'        => $idLokasi,
+            'id_lokasi_mismatch' => $idLokasiMismatch,
+            'id_lokasi_tidak_terpakai' => $idLokasiTidakTerpakai,
             'total_kecamatan'  => $info['kecamatan_count'],
             'total_kelurahan'  => $info['kelurahan_count'],
             'winners_per_page' => $winnersPerPage,

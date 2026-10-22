@@ -36,6 +36,12 @@ class Prize extends Model
 
     public function getAvailableQuantityAttribute()
     {
-        return $this->quantity - $this->winners()->count();
+        // Gunakan hasil withCount('winners') bila sudah tersedia agar tidak
+        // menimbulkan query N+1 saat daftar hadiah dimuat.
+        $used = array_key_exists('winners_count', $this->attributes)
+            ? (int) $this->attributes['winners_count']
+            : $this->winners()->count();
+
+        return $this->quantity - $used;
     }
 }
