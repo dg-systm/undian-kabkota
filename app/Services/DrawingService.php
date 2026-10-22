@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 class DrawingService
 {
+    public const PROCEDURE_DEFAULT = 'getWinner';
+
+    public const PROCEDURE_BBNKB = 'getWinnerBbn';
+
     protected ?array $samsatIdMap = null;
 
     public function getWinnerMySql(int $idLokasi, ?string $idKecamatan, int $totalWinner = 5)
@@ -23,9 +27,11 @@ class DrawingService
         ]);
     }
 
-    public function getWinnerSqlsrv(int $idLokasi, ?string $idKecamatan, int $totalWinner = 5)
+    public function getWinnerSqlsrv(int $idLokasi, ?string $idKecamatan, int $totalWinner = 5, string $procedure = self::PROCEDURE_DEFAULT)
     {
-        return DB::select('EXEC getWinner ?, ?, ?', [
+        $procedure = $this->resolveProcedureName($procedure, 'sqlsrv');
+
+        return DB::select("EXEC {$procedure} ?, ?, ?", [
             $idLokasi,
             $idKecamatan ?? '',
             $totalWinner,
@@ -36,17 +42,42 @@ class DrawingService
      * Panggil SP getWinner sesuai signature database:
      * getWinner(@id_lokasi_samsat, @id_kecamatan, @length).
      *
+     * Untuk kategori hadiah BBNKB, SP getWinnerBbn dipakai agar hanya
+     * kendaraan dengan id_pendaftaran = 1 yang ikut diundi.
+     *
      * @param  string|null  $idKecamatan  Kode kecamatan (mis. "0801"); '' = semua kecamatan.
+     * @param  bool  $isBbnkb  true = gunakan SP getWinnerBbn.
      */
-    public function getWinner(int $idLokasi, ?string $idKecamatan = '', int $totalWinner = 5)
+    public function getWinner(int $idLokasi, ?string $idKecamatan = '', int $totalWinner = 5, bool $isBbnkb = false)
     {
         $driver = DB::connection()->getDriverName();
+        $procedure = $isBbnkb ? self::PROCEDURE_BBNKB : self::PROCEDURE_DEFAULT;
 
         return match ($driver) {
             'mysql', 'mariadb' => $this->getWinnerMySql($idLokasi, $idKecamatan, $totalWinner),
-            'sqlsrv'           => $this->getWinnerSqlsrv($idLokasi, $idKecamatan, $totalWinner),
+            'sqlsrv'           => $this->getWinnerSqlsrv($idLokasi, $idKecamatan, $totalWinner, $procedure),
             default => $this->getWinnerMySql($idLokasi, $idKecamatan, $totalWinner),
         };
+    }
+
+    /**
+     * Pastikan nama SP hanya berasal dari daftar yang diizinkan.
+     *
+     * getWinnerBbn hanya tersedia di SQL Server; driver lain memakai getWinner.
+     */
+    protected function resolveProcedureName(string $procedure, string $driver): string
+    {
+        $allowed = [self::PROCEDURE_DEFAULT, self::PROCEDURE_BBNKB];
+
+        if (!in_array($procedure, $allowed, true)) {
+            return self::PROCEDURE_DEFAULT;
+        }
+
+        if ($procedure === self::PROCEDURE_BBNKB && $driver !== 'sqlsrv') {
+            return self::PROCEDURE_DEFAULT;
+        }
+
+        return $procedure;
     }
 
     /**
@@ -57,14 +88,14 @@ class DrawingService
      * lebih sedikit dari yang diminta. Pemanggilan diulang beberapa kali
      * tanpa mengubah isi SP.
      */
-    public function getWinnerCandidates(int $idLokasi, ?string $idKecamatan, int $required, int $maxAttempts = 10): Collection
+    public function getWinnerCandidates(int $idLokasi, ?string $idKecamatan, int $required, int $maxAttempts = 10, bool $isBbnkb = false): Collection
     {
         $required = max($required, 1);
         $collected = collect();
         $emptyAttempts = 0;
 
         for ($attempt = 0; $attempt < $maxAttempts && $collected->count() < $required; $attempt++) {
-            $rows = collect($this->getWinner($idLokasi, $idKecamatan, $required));
+            $rows = collect($this->getWinner($idLokasi, $idKecamatan, $required, $isBbnkb));
             $before = $collected->count();
 
             $collected = $collected
@@ -107,7 +138,8 @@ class DrawingService
         array $samsats = [],
         int $totalWinnerPerSamsat = 5,
         bool $isDemo = true,
-        array $samsatIdsByLocation = []
+        array $samsatIdsByLocation = [],
+        bool $isBbnkb = false
     ): array {
         $prizes = Prize::whereIn('id', $prizeIds)->get();
         $totalWinner = $totalWinnerPerSamsat * count($samsats);
@@ -130,7 +162,8 @@ class DrawingService
                 $samsats,
                 $totalWinnerPerSamsat,
                 $isDemo,
-                $samsatIdsByLocation
+                $samsatIdsByLocation,
+                $isBbnkb
             );
         }
 
@@ -171,7 +204,7 @@ class DrawingService
             }
 
             $spWinners = collect($samsatIds)
-                ->flatMap(fn($samsatId) => $this->getWinnerCandidates($samsatId, '', $totalWinnerPerSamsat))
+                ->flatMap(fn($samsatId) => $this->getWinnerCandidates($samsatId, '', $totalWinnerPerSamsat, 10, $isBbnkb))
                 ->unique('id')
                 ->shuffle()
                 ->take($totalWinnerPerSamsat)
@@ -266,7 +299,8 @@ class DrawingService
         array $locations,
         int $perLocation,
         bool $isDemo,
-        array $samsatIdsByLocation
+        array $samsatIdsByLocation,
+        bool $isBbnkb = false
     ): array {
         $required = $perLocation * count($locations);
         $totalAvailable = $prizes->sum(fn($prize) => $prize->available_quantity);
@@ -309,7 +343,7 @@ class DrawingService
 
             foreach ($samsatIdsByLocation[$location] as $samsatId) {
                 $candidates = $candidates->merge(
-                    $this->getWinnerCandidates((int) $samsatId, (string) $location, $perLocation)
+                    $this->getWinnerCandidates((int) $samsatId, (string) $location, $perLocation, 10, $isBbnkb)
                 );
             }
 

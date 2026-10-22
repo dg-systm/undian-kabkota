@@ -52,10 +52,11 @@ class DrawController extends Controller
         }
 
         $drawCategoryId = $categoryIds->first();
+        $isBbnkb = $prizes->first()?->prize_category?->isBbnkb() ?? false;
         $totalAvailable = $prizes->sum(fn($p) => $p->available_quantity);
 
         if ($isGlobal) {
-            return $this->pickGlobal($request, $prizeIds, $prizes, $drawCategoryId, $totalAvailable, $isDemo);
+            return $this->pickGlobal($request, $prizeIds, $prizes, $drawCategoryId, $totalAvailable, $isDemo, $isBbnkb);
         }
 
         $perSamsat = (int) $request->input('per_samsat', 5);
@@ -67,7 +68,8 @@ class DrawController extends Controller
             $totalAvailable,
             $isDemo,
             $perSamsat,
-            $samsatIdsByLocation
+            $samsatIdsByLocation,
+            $isBbnkb
         );
     }
 
@@ -77,7 +79,8 @@ class DrawController extends Controller
         Collection $prizes,
         $drawCategoryId,
         $totalAvailable,
-        bool $isDemo
+        bool $isDemo,
+        bool $isBbnkb = false
     ) {
         $required = (int) $request->quantity;
 
@@ -99,7 +102,7 @@ class DrawController extends Controller
         }
         shuffle($prizePool);
 
-        $spWinners = $this->drawingService->getWinnerCandidates(999, '', $required, 5);
+        $spWinners = $this->drawingService->getWinnerCandidates(999, '', $required, 5, $isBbnkb);
 
         if ($spWinners->count() < $required) {
             return response()->json([
@@ -169,7 +172,8 @@ class DrawController extends Controller
         $totalAvailable,
         bool $isDemo,
         int $perSamsat = 5,
-        array $samsatIdsByLocation = []
+        array $samsatIdsByLocation = [],
+        bool $isBbnkb = false
     ) {
         $required  = count($samsats) * $perSamsat;
 
@@ -179,8 +183,8 @@ class DrawController extends Controller
             ], 422);
         }
 
-        $response = DB::transaction(function () use ($prizeIds, $samsats, $perSamsat, $isDemo, $samsatIdsByLocation) {
-            return $this->drawingService->pickDraw($prizeIds, $samsats, $perSamsat, $isDemo, $samsatIdsByLocation);
+        $response = DB::transaction(function () use ($prizeIds, $samsats, $perSamsat, $isDemo, $samsatIdsByLocation, $isBbnkb) {
+            return $this->drawingService->pickDraw($prizeIds, $samsats, $perSamsat, $isDemo, $samsatIdsByLocation, $isBbnkb);
         });
 
         if (isset($response['status']) && $response['status'] === 422) {
