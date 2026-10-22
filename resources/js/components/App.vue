@@ -12,16 +12,18 @@
                             aria-label="scrollable content" style="height: 100%;">
                             <div style="padding: 0px;">
                                 <div class="content-header">
-                                    <div class="link-fx text-body-color-dark fw-semibold fs-sm">
-                                        <i class="fa fa-fw fa-gear"></i> Pengaturan Undian
+                                    <div class="settings-panel-title">
+                                        <i class="fa fa-fw fa-gear"></i>
+                                        <span>Pengaturan Undian</span>
                                     </div>
-                                    <button type="button" class="btn btn-sm btn-alt-danger ms-auto" data-toggle="layout"
-                                        data-action="side_overlay_close">
+                                    <button type="button" class="btn btn-sm btn-alt-danger settings-panel-close"
+                                        data-toggle="layout" data-action="side_overlay_close" title="Tutup"
+                                        aria-label="Tutup pengaturan undian">
                                         <i class="fa fa-fw fa-times"></i>
                                     </button>
                                 </div>
                                 <div class="content-side">
-                                    <div class="block pull-x">
+                                    <div class="block">
                                         <div class="block-content block-content-full">
 
                                             <!-- WILAYAH (dari .env) -->
@@ -30,19 +32,11 @@
                                                     <i class="fa fa-map-marked-alt me-1 text-primary"></i>
                                                     Wilayah Undian
                                                 </label>
-                                                <div class="border p-2 rounded bg-dark-op-10">
-                                                    <div class="fw-semibold fs-sm">
-                                                        {{ wilayah.kabkota || 'Belum diatur' }}
-                                                    </div>
+                                                <div v-if="wilayah.kabkota" class="fw-semibold fs-sm">
+                                                    {{ wilayah.kabkota }}
                                                 </div>
                                                 <div v-if="wilayah.error" class="text-danger small mt-1">
                                                     <i class="fa fa-exclamation-triangle me-1"></i>{{ wilayah.error }}
-                                                </div>
-                                                <div class="d-flex justify-content-between small mt-1">
-                                                    <span class="text-muted">ID Lokasi (APP_ID_LOKASI)</span>
-                                                    <strong>
-                                                        {{ wilayah.idLokasi.length ? wilayah.idLokasi.join(', ') : 'Otomatis' }}
-                                                    </strong>
                                                 </div>
                                                 <div v-if="wilayah.idLokasiMismatch.length"
                                                     class="text-danger small mt-1">
@@ -165,7 +159,7 @@
                                             </div>
 
                                             <!-- SUMMARY -->
-                                            <div class="mb-3 p-2 rounded" style="background: rgba(0,0,0,0.05);">
+                                            <div class="mb-3 settings-summary">
                                                 <div class="d-flex justify-content-between small mb-1">
                                                     <span>Kecamatan dipilih:</span>
                                                     <strong>{{ selectedKecamatan.length }}</strong>
@@ -229,7 +223,7 @@
                 </button>
             </div>
             <div class="content-side">
-                <div class="block pull-x">
+                <div class="block">
                     <div class="block-content block-content-full">
 
                         <!-- Konten pengaturan tampilan: langsung tampil tanpa tombol Set -->
@@ -685,14 +679,22 @@
     will-change: transform;
 }
 
+/* Kedua sidebar memakai gaya header, area konten, dan kartu yang sama */
+#side-overlay .content-header,
 #side-overlay-settings .content-header {
+    display: flex;
     flex: 0 0 auto;
+    align-items: center;
+    width: 100%;
     height: 60px;
+    margin: 0;
     padding: 0 18px;
     gap: 12px;
     border-bottom: 1px solid #e9ecef;
+    background-color: #fff;
 }
 
+#side-overlay .settings-panel-title,
 #side-overlay-settings .settings-panel-title {
     display: flex;
     align-items: center;
@@ -705,30 +707,116 @@
     white-space: nowrap;
 }
 
+#side-overlay .settings-panel-title span,
 #side-overlay-settings .settings-panel-title span {
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
+#side-overlay .settings-panel-close,
 #side-overlay-settings .settings-panel-close {
     flex: 0 0 auto;
     margin-left: auto;
 }
 
+/* Sidebar Pengaturan Undian: header tetap di atas, konten yang bergulir */
+#side-overlay .simplebar-content-wrapper {
+    overflow: hidden;
+}
+
+#side-overlay .simplebar-content-wrapper>div {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+#side-overlay .content-side,
 #side-overlay-settings>.content-side {
     flex: 1 1 auto;
     min-height: 0;
-    padding: 18px;
+    padding: 14px;
     overflow-y: auto;
+    overflow-x: hidden;
+    background-color: #f8f9fa;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
     -webkit-overflow-scrolling: touch;
 }
 
+#side-overlay .content-side .block,
 #side-overlay-settings .content-side .block {
+    width: 100%;
     margin-bottom: 0;
 }
 
+#side-overlay .block-content,
 #side-overlay-settings .block-content {
     padding: 0;
+}
+
+/* Setiap kelompok pengaturan tampil sebagai kartu agar rapi dan tidak melebar */
+#side-overlay .block-content>.mb-3:not(.row),
+#side-overlay-settings .block-content>div>.mb-3 {
+    margin-bottom: 12px !important;
+    padding: 12px;
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    background-color: #fff;
+}
+
+#side-overlay .block-content>.mb-3:not(.row):last-child,
+#side-overlay-settings .block-content>div>.mb-3:last-child {
+    margin-bottom: 0 !important;
+}
+
+#side-overlay .settings-summary {
+    background-color: #f8f9fa !important;
+}
+
+#side-overlay .content-side .border.rounded {
+    border-color: #e9ecef !important;
+    background-color: #f8f9fa !important;
+}
+
+#side-overlay .content-side .form-label,
+#side-overlay-settings .content-side .form-label {
+    margin-bottom: 0.35rem;
+    font-size: 0.8rem;
+}
+
+#side-overlay .content-side .form-range,
+#side-overlay-settings .content-side .form-range {
+    min-width: 0;
+}
+
+#side-overlay .content-side .form-control-sm,
+#side-overlay .content-side .form-select-sm,
+#side-overlay-settings .content-side .form-control-sm {
+    min-width: 0;
+    height: 32px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+#side-overlay .content-side .btn-xs,
+#side-overlay-settings .content-side .btn-xs {
+    padding: 0.2rem 0.45rem;
+    font-size: 0.7rem;
+    line-height: 1.4;
+}
+
+#side-overlay .block-content>.row {
+    margin-right: 0;
+    margin-left: 0;
+}
+
+#side-overlay .block-content>.row> [class*="col-"] {
+    padding-right: 0;
+    padding-left: 0;
+}
+
+#side-overlay .block-content>.row> [class*="col-"]+[class*="col-"] {
+    padding-left: 8px;
 }
 
 #side-overlay-settings.is-open {

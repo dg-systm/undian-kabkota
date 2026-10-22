@@ -13,7 +13,7 @@
     "src": "resources/images/Grobogan Civic Celebration Banner.webp"
   },
   "resources/js/app.css": {
-    "file": "assets/app-99d31386.css",
+    "file": "assets/app-a9b43ba6.css",
     "src": "resources/js/app.css"
   },
   "resources/js/app.js": {
@@ -22,9 +22,9 @@
       "assets/Gebyar Hadiah Pajak Grobogan-98313b52.webp"
     ],
     "css": [
-      "assets/app-99d31386.css"
+      "assets/app-a9b43ba6.css"
     ],
-    "file": "assets/app-6366c527.js",
+    "file": "assets/app-e0782499.js",
     "isEntry": true,
     "src": "resources/js/app.js"
   }

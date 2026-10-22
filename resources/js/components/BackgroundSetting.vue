@@ -589,6 +589,23 @@ export default {
 </script>
 
 <style scoped>
+/* ==== Kontrol mengikuti lebar panel Pengaturan Tampilan ==== */
+.form-label {
+    margin-bottom: 0.35rem;
+    font-size: 0.8rem;
+}
+
+.form-range {
+    min-width: 0;
+}
+
+.form-control-sm {
+    min-width: 0;
+    height: 32px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
 /* ==== Kerangka pratinjau ==== */
 .bg-preview {
     position: relative;
@@ -637,6 +654,16 @@ export default {
 
 .bg-preview:hover .bg-preview-hint {
     opacity: 1;
+}
+
+.pv-mode-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.3rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
 }
 
 .pv-mode-btn.active {
