@@ -14,10 +14,12 @@ echo.
 echo Menyalakan server, browser akan terbuka otomatis...
 echo.
 
-REM Segarkan cache config/route/view agar perubahan .env (mis. APP_KABKOTA,
-REM APP_DEBUG) langsung terpakai dan aplikasi tetap cepat.
+REM Pengaturan undian kini bisa diubah dari halaman admin (Filament > Pengaturan
+REM Undian) dan disimpan di storage/app/undian-settings.json. Cache config akan
+REM membekukan nilai tersebut, jadi cache config DIHAPUS saat start, bukan dibuat.
 echo Menyiapkan cache aplikasi...
-php artisan optimize
+php artisan config:clear
+php artisan view:clear
 echo.
 
 REM Buka browser otomatis setelah server siap (delay sekitar 5 detik)

@@ -15,11 +15,18 @@
     <script src="{{ asset('/js-loading-overlay/js-loading-overlay-custom.js') }}"></script>
     <script src="{{ asset('/codebase/js/codebase.app.min-5.11.js') }}"></script>
     <script>
+        @php
+            $wilayahInfo = \App\Support\Wilayah::find(config('wilayah.active'));
+        @endphp
         window.appConfig = {
             appName: "{{ config('app.name') }}",
             year: "{{ date('Y') }}",
             kabkota: "{{ config('wilayah.active') }}",
             winnersPerPage: {{ (int) config('wilayah.winners_per_page', 5) }},
+            drawMode: "{{ config('wilayah.draw_mode') }}",
+            // Kode plat daerah aktif (dari .env APP_KABKOTA) untuk animasi
+            // pengundian — tersedia sejak halaman dimuat.
+            platDaerah: {!! json_encode(\App\Support\Wilayah::plateCodes()) !!},
             platJateng: `{!! json_encode(config('plat_jateng')) !!}`
         };
     </script>

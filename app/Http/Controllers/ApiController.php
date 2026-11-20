@@ -56,6 +56,9 @@ class ApiController extends Controller
                 'id_lokasi_mismatch' => [],
                 'id_lokasi_tidak_terpakai' => [],
                 'winners_per_page' => $winnersPerPage,
+                'draw_mode'        => (string) config('wilayah.draw_mode', ''),
+                'global_roda2'     => (int) config('wilayah.global.roda2', 5),
+                'global_roda4'     => (int) config('wilayah.global.roda4', 1),
                 'error'            => "Kabupaten/Kota \"{$active}\" belum terdaftar pada mapping wilayah. "
                     . 'Silakan sesuaikan nilai APP_KABKOTA pada file .env.',
             ], 200);
@@ -82,6 +85,26 @@ class ApiController extends Controller
             'total_kecamatan'  => $info['kecamatan_count'],
             'total_kelurahan'  => $info['kelurahan_count'],
             'winners_per_page' => $winnersPerPage,
+            // Mode pengundian aktif ('' = belum di-set admin).
+            'draw_mode'        => (string) config('wilayah.draw_mode', ''),
+            // Kode plat daerah aktif untuk animasi pengundian (mis. "AD").
+            'plat_kode'        => self::extractPlateCode($info['plat']),
+            // Komposisi pemenang mode global (semua kecamatan), diatur dari admin.
+            'global_roda2'     => (int) config('wilayah.global.roda2', 5),
+            'global_roda4'     => (int) config('wilayah.global.roda4', 1),
+            // Jumlah pemenang total per pengundian mode global (= roda 2 + roda 4).
+            'global_total'     => (int) config('wilayah.global.total', 6),
         ], 200);
+    }
+
+    /**
+     * Ambil kode plat dari label mapping wilayah (mis. "Plat AD" -> "AD").
+     * Bila berisi beberapa kode dipisah spasi/koma, kembalikan semuanya.
+     *
+     * @return array<int, string>
+     */
+    public static function extractPlateCode(?string $platLabel): array
+    {
+        return \App\Support\Wilayah::plateCodesFromLabel($platLabel);
     }
 }

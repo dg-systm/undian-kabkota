@@ -74,9 +74,16 @@
                                                     <i class="fa fa-users me-1 text-primary"></i>
                                                     Jumlah Pemenang
                                                 </label>
-                                                <input type="number" min="1" :max="maxQuantity" v-model="quantity"
+                                                <input type="number" min="1" :max="maxQuantity"
+                                                    v-model.number="quantity"
                                                     class="form-control" placeholder="Masukan Jumlah..">
-                                                <div class="text-muted mt-1" style="font-size:0.75rem;">
+                                                <div class="text-muted mt-1" style="font-size:0.75rem;" v-if="isGlobal6">
+                                                    Komposisi: <strong>{{ globalRoda2 }}</strong> roda 2 +
+                                                    <strong>{{ globalRoda4 }}</strong> roda 4 (total {{ globalTotal }})
+                                                    &mdash; diatur admin. Bisa diundi bertahap (1 per 1):
+                                                    tiap undian mengambil slot komposisi berikutnya.
+                                                </div>
+                                                <div class="text-muted mt-1" style="font-size:0.75rem;" v-else>
                                                     Maks: <strong>{{ maxQuantity }}</strong> (stok tersedia)
                                                 </div>
                                             </div>
@@ -86,7 +93,24 @@
                                                 style="background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.3);">
                                                 <div class="d-flex align-items-center gap-2">
                                                     <i class="fa fa-globe text-warning"></i>
-                                                    <div class="fw-semibold fs-sm text-warning">Mode Global</div>
+                                                    <div class="fw-semibold fs-sm text-warning">
+                                                        Mode Global &mdash; Semua Kecamatan
+                                                    </div>
+                                                </div>
+                                                <div class="text-muted mt-1" style="font-size:0.72rem;" v-if="isGlobal6">
+                                                    {{ quantity }} pemenang per undian &mdash; komposisi {{ globalRoda2 }} roda 2 + {{ globalRoda4 }} roda 4 (total {{ globalTotal }}).
+                                                </div>
+                                                <div class="mt-1 small fw-semibold" v-if="isGlobal6 && selectedPrizeIds.length > 0">
+                                                    Progres: roda 2 {{ komposisiProgress.drawn.roda2 }}/{{ globalRoda2 }},
+                                                    roda 4 {{ komposisiProgress.drawn.roda4 }}/{{ globalRoda4 }}
+                                                    &mdash; sisa {{ komposisiProgress.remaining.total }} slot.
+                                                </div>
+                                                <div class="text-muted mt-1" style="font-size:0.72rem;" v-else>
+                                                    Jumlah pemenang fleksibel sesuai kebutuhan acara.
+                                                </div>
+                                                <div v-if="!drawMode" class="mt-1 text-danger small fw-semibold">
+                                                    <i class="fa fa-exclamation-triangle me-1"></i>
+                                                    Mode pengundian belum di-set admin.
                                                 </div>
                                             </div>
 
@@ -214,7 +238,8 @@
 
                 </div>
                 <div class="space-x-1">
-                    <button type="button" class="btn btn-sm btn-alt-secondary me-1 page-nav-btn"
+                    <button v-if="drawMode === 'kecamatan'" type="button"
+                        class="btn btn-sm btn-alt-secondary me-1 page-nav-btn"
                         title="Kembali ke Undian Biasa" :disabled="pageSwitching" @click="goToRegularDraw">
                         <span v-if="pageSwitching" class="page-nav-spinner" aria-hidden="true"></span>
                         <i v-else class="fa fa-fw fa-arrow-left"></i>
@@ -635,19 +660,51 @@ export default {
         const shufflingTimeout = ref(null);
         const drawButtonSize = ref(Number(localStorage.getItem('grandPrizeDrawButtonSize')) || 100);
 
-        // All Jateng plate prefixes for realistic global draw animation
+        // Kode plat daerah aktif untuk animasi pengundian. Sumber utama:
+        // konfigurasi .env via window.appConfig (tersedia sejak halaman
+        // dimuat), disegarkan lagi dari API wilayah bila ada. Bila belum
+        // terbaca, fallback ke daftar plat Jateng.
+        const injectedPlat = inject('platDaerah') || [];
+        const platDaerah = ref(injectedPlat.length ? injectedPlat : ['H', 'K', 'AD', 'G', 'R', 'AA']);
         const platJateng = ['H', 'K', 'AD', 'G', 'R', 'AA'];
         const disableTrigger = ref(true);
 
         // Batas waktu pengundian agar tombol Stop tidak terkunci bila server
-        // lambat atau request menggantung.
+        // lambat atau request menggantung. Batas dibuat besar karena request
+        // pertama setelah perangkat standby bisa sangat lambat (koneksi
+        // database/jaringan baru terbangun).
         const DRAW_START_DELAY = 3000;
-        const DRAW_REQUEST_TIMEOUT = 15000;
-        const DRAW_WATCHDOG_TIMEOUT = DRAW_REQUEST_TIMEOUT + 2000;
+        const DRAW_REQUEST_TIMEOUT = 45000;
+        // Watchdog memberi ruang ekstra untuk pemulihan hasil (recoverDraw).
+        const DRAW_WATCHDOG_TIMEOUT = DRAW_REQUEST_TIMEOUT + 20000;
 
         const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+        // Komposisi & jumlah pemenang mode global (diatur dari admin):
+        // roda 2 / roda 4 = komposisi tetap; total = roda 2 + roda 4.
+        // Pengundian bisa bertahap (mis. 1 per 1) — tiap undian mengambil
+        // sisa slot komposisi berikutnya di backend.
+        const globalRoda2 = ref(5);
+        const globalRoda4 = ref(1);
+        const globalTotal = ref(6);
+        const komposisiMinimal = computed(() => (Number(globalRoda2.value) || 0) + (Number(globalRoda4.value) || 0));
+
+        // Progres komposisi (sudah/sisa slot) untuk hadiah yang dipilih —
+        // dipakai untuk guard tombol Simpan bila komposisi sudah terpenuhi.
+        const komposisiProgress = ref({
+            komposisi: { roda2: 0, roda4: 0, total: 0 },
+            drawn: { roda2: 0, roda4: 0, total: 0 },
+            remaining: { roda2: 0, roda4: 0, total: 0 },
+            completed: false,
+        });
+
+        // Mode pengundian aktif ('' = belum di-set admin):
+        // 'kecamatan' -> grand prize fleksibel; 'global6' -> komposisi minimal.
+        const drawMode = ref('');
+        const isGlobal6 = computed(() => drawMode.value === 'global6');
+
         const quantity = ref(1);
+
         const selectedCategoryId = ref('');
         const selectedPrizeIds = ref([]);
         const prizeOptions = ref([]);
@@ -736,42 +793,82 @@ export default {
         const onCategoryChange = () => {
             if (!selectedCategoryId.value) {
                 selectedPrizeIds.value = [];
-                quantity.value = 1;
+                if (!isGlobal6.value) quantity.value = 1;
                 return;
             }
 
+            // Pilih semua hadiah dalam kategori sebagai default (bisa di-uncheck manual).
             selectedPrizeIds.value = filteredPrizes.value.map(item => item.id);
-            quantity.value = maxQuantity.value || 1;
+
+            // Mode grand prize fleksibel: jumlah pemenang mengikuti stok terpilih.
+            if (!isGlobal6.value) {
+                quantity.value = maxQuantity.value || 1;
+            }
         };
 
-        // SESUDAH
+        // Jumlah pemenang di sidebar = jumlah per undian; pengundian bisa
+        // dilakukan bertahap (mis. 1 per 1) — backend mengalokasikan sisa
+        // slot komposisi otomatis tanpa mengubah komposisi admin.
 
-        // Watch perubahan selectedPrizeIds (deep agar array mutation terdeteksi)
-        watch(selectedPrizeIds, () => {
-            if (selectedPrizeIds.value.length === 0) {
-                quantity.value = 1;
+        /**
+         * Ambil progres komposisi dari server untuk hadiah yang dipilih.
+         */
+        let progressDebounce = null;
+
+        const fetchProgress = async () => {
+            if (!isGlobal6.value || selectedPrizeIds.value.length === 0) {
+                komposisiProgress.value = {
+                    komposisi: { roda2: 0, roda4: 0, total: 0 },
+                    drawn: { roda2: 0, roda4: 0, total: 0 },
+                    remaining: { roda2: 0, roda4: 0, total: 0 },
+                    completed: false,
+                };
                 return;
             }
-            // Hitung ulang maxQuantity berdasarkan prize terpilih saat ini
-            const newMax = selectedPrizeIds.value.reduce((sum, id) => {
-                const prize = prizeOptions.value.find(item => item.id === id);
-                return sum + (prize ? prize.available_quantity : 0);
-            }, 0);
-            // Selalu sesuaikan quantity ke stok terbaru
-            quantity.value = newMax > 0 ? newMax : 1;
+
+            try {
+                const response = await axios.get('api/draw/progress', {
+                    params: {
+                        prize_ids: selectedPrizeIds.value,
+                        roda2: Number(globalRoda2.value) || 0,
+                        roda4: Number(globalRoda4.value) || 0,
+                    },
+                    timeout: 15000,
+                });
+                komposisiProgress.value = response.data;
+            } catch (error) {
+                console.error('Gagal memuat progres komposisi:', error);
+            }
+        };
+
+        const fetchProgressDebounced = () => {
+            if (progressDebounce) clearTimeout(progressDebounce);
+            progressDebounce = setTimeout(fetchProgress, 400);
+        };
+
+        watch(selectedPrizeIds, () => {
+            if (isGlobal6.value) fetchProgressDebounced();
         }, { deep: true });
 
-        // Watch maxQuantity untuk validasi batas atas (misalnya stok berubah dari server)
-        watch(maxQuantity, (newMax) => {
-            if (quantity.value > newMax) {
-                quantity.value = newMax > 0 ? newMax : 1;
-            }
+        watch(isGlobal6, (active) => {
+            if (active) fetchProgress();
         });
 
         const settingError = computed(() => {
+            if (!drawMode.value) return 'Mode pengundian belum di-set. Atur di menu admin: Pengaturan Undian.';
             if (!selectedCategoryId.value) return 'Pilih kategori hadiah.';
             if (selectedPrizeIds.value.length === 0) return 'Pilih minimal 1 jenis hadiah.';
             if (!quantity.value || parseInt(quantity.value) < 1) return 'Jumlah pemenang minimal 1.';
+
+            if (isGlobal6.value && komposisiMinimal.value < 1) {
+                return 'Komposisi belum diatur. Atur di menu admin: Pengaturan Undian.';
+            }
+
+            // Guard: komposisi untuk hadiah terpilih sudah terpenuhi.
+            if (isGlobal6.value && komposisiProgress.value.completed) {
+                return `Komposisi ${komposisiProgress.value.komposisi.roda2} roda 2 + ${komposisiProgress.value.komposisi.roda4} roda 4 sudah terpenuhi. Pilih hadiah/kategori lain untuk pengundian berikutnya.`;
+            }
+
             if (parseInt(quantity.value) > maxQuantity.value) {
                 return `Jumlah (${quantity.value}) melebihi stok tersedia (${maxQuantity.value}).`;
             }
@@ -990,8 +1087,13 @@ export default {
             return '?'.repeat(length);
         };
 
+        const getPlatePrefix = () => {
+            const codes = platDaerah.value.length ? platDaerah.value : platJateng;
+            return codes[Math.floor(Math.random() * codes.length)];
+        };
+
         const getRandomPlate = () => {
-            const prefix = platJateng[Math.floor(Math.random() * platJateng.length)];
+            const prefix = getPlatePrefix();
             const number = String(Math.floor(Math.random() * 9999 + 1)).padStart(4, '0');
             const serie = getRandomLetter(Math.floor(Math.random() * 3 + 1));
             return `${prefix} ${number} ${serie}`;
@@ -1001,7 +1103,8 @@ export default {
             row.drawing = true;
 
             row.interval.wilayah = setInterval(() => {
-                row.kodeWilayah = platJateng[Math.floor(Math.random() * platJateng.length)];
+                // Hanya kode plat daerah aktif yang tampil saat animasi.
+                row.kodeWilayah = getPlatePrefix();
             }, 75);
 
             row.interval.angka = setInterval(() => {
@@ -1056,6 +1159,32 @@ export default {
             clearInterval(row.interval.lokasi);
         };
 
+        /**
+         * Coba pulihkan hasil undian yang mungkin sudah tersimpan di server
+         * (request terputus setelah backend menyimpan pemenang, mis. perangkat
+         * standby lama). Endpoint /api/draw/recent mengembalikan hasil undian
+         * yang baru saja tersimpan dalam bentuk respons yang sama.
+         */
+        const recoverDraw = async () => {
+            try {
+                const response = await axios.get('api/draw/recent', { timeout: 10000 });
+                const items = response.data?.data;
+
+                if (response.data?.recovered && Array.isArray(items) && items.length > 0) {
+                    winnerList.value = items;
+                    winnersReady.value = true;
+                    getOptionsPrize();
+                    fetchProgress();
+                    alert('Koneksi ke server sempat terputus, tetapi hasil undian sudah tersimpan di server dan kini ditampilkan.');
+                    return true;
+                }
+            } catch (error) {
+                console.error('Gagal memulihkan hasil undian:', error);
+            }
+
+            return false;
+        };
+
         const pickWinner = async () => {
             disableTrigger.value = true;
 
@@ -1068,6 +1197,13 @@ export default {
                     quantity: parseInt(form.quantity),
                     is_global: true,
                     is_demo: false,
+                    // Global custom 6 pemenang: backend memakai komposisi roda
+                    // yang diatur admin; grand prize fleksibel tanpa komposisi.
+                    ...(isGlobal6.value ? {
+                        global_mode: 'roda',
+                        roda2: Number(globalRoda2.value) || 0,
+                        roda4: Number(globalRoda4.value) || 0,
+                    } : { global_mode: 'free' }),
                 }, {
                     signal: controller.signal,
                     timeout: DRAW_REQUEST_TIMEOUT,
@@ -1076,9 +1212,36 @@ export default {
                 winnerList.value = response.data.data;
                 winnersReady.value = true;
                 getOptionsPrize();
+                fetchProgress();
                 disableTrigger.value = false;
                 return true;
             } catch (error) {
+                console.error('Gagal update:', error.response?.data || error);
+
+                // Sesi/koneksi kedaluwarsa: muat ulang halaman agar koneksi baru.
+                if (error.response?.status === 419) {
+                    alert('Sesi telah berakhir. Halaman akan dimuat ulang.');
+                    setTimeout(() => window.location.reload(), 1200);
+                    return false;
+                }
+
+                // Koneksi lambat/terputus: hasil bisa saja sudah tersimpan di
+                // server (backend tetap memproses sampai selesai). Coba pulihkan
+                // dulu sebelum menampilkan error.
+                const connectionIssue = error.code === 'ERR_CANCELED'
+                    || error.code === 'ECONNABORTED'
+                    || (error.response?.status ?? 0) >= 500
+                    || !error.response;
+
+                if (connectionIssue) {
+                    const recovered = await recoverDraw();
+
+                    if (recovered) {
+                        disableTrigger.value = false;
+                        return true;
+                    }
+                }
+
                 disableTrigger.value = false;
                 resetDrawState();
                 undianList.value.forEach(row => stopDrawingRow(row));
@@ -1087,7 +1250,6 @@ export default {
                 alert(timedOut
                     ? 'Pengundian melebihi batas waktu. Silakan coba lagi.'
                     : (error.response?.data.message || 'Terjadi kesalahan saat pengundian.'));
-                console.error('Gagal update:', error.response?.data || error);
                 return false;
             } finally {
                 clearTimeout(timeoutId);
@@ -1235,40 +1397,44 @@ export default {
             drawHandle();
         };
 
-        const saveSetting = () => {
+        const saveSetting = async () => {
             if (settingError.value) {
                 alert(settingError.value);
                 return;
             }
 
-            const nextPrizeKey = createPrizeKey();
-            const prizeChanged = nextPrizeKey !== form.prizeKey;
+            // Guard langsung saat Simpan: bila komposisi untuk hadiah
+            // terpilih sudah terpenuhi, tolak dan minta ganti hadiah/kategori.
+            if (isGlobal6.value) {
+                await fetchProgress();
+
+                if (komposisiProgress.value.completed) {
+                    alert(`Komposisi ${komposisiProgress.value.komposisi.roda2} roda 2 + ${komposisiProgress.value.komposisi.roda4} roda 4 sudah terpenuhi. Pilih hadiah/kategori lain untuk pengundian berikutnya.`);
+                    return;
+                }
+            }
 
             form.prize_ids = [...selectedPrizeIds.value];
             form.prizeNames = [...selectedPrizeNames.value];
-            form.quantity = parseInt(quantity.value);
-            form.prizeKey = nextPrizeKey;
+            form.quantity = quantity.value;
+            form.prizeKey = createPrizeKey();
 
             const el = document.getElementById('page-container');
             if (el) {
                 el.classList.remove('side-overlay-o');
             }
 
-            if (prizeChanged) {
-                resetDrawState();
-            }
-
-            if (drawFinished.value) {
-                disableTrigger.value = true;
-                return;
-            }
-
+            // Simpan = commit pengaturan baru: tabel di-refresh dan tombol
+            // Start dibuka lagi, termasuk setelah undian selesai (alur undian
+            // bertahap 1 per 1 mengandalkan Simpan untuk lanjut ke undian
+            // berikutnya).
+            resetDrawState();
             initUndianList();
             disableTrigger.value = false;
         };
 
         const hasSetup = computed(() => {
-            return form.prize_ids.length > 0 && form.quantity > 0;
+            return !!drawMode.value && form.prize_ids.length > 0 && form.quantity > 0;
         });
 
         const trigger = () => {
@@ -1303,15 +1469,58 @@ export default {
                 });
                 kecamatanNames.value = map;
                 kecamatanList.value = list.map(kec => kec.nama).filter(Boolean);
+
+                // Komposisi & jumlah pemenang mode global custom dari pengaturan admin.
+                if (response.data?.global_roda2 !== undefined) {
+                    globalRoda2.value = Number(response.data.global_roda2) || 0;
+                }
+                if (response.data?.global_roda4 !== undefined) {
+                    globalRoda4.value = Number(response.data.global_roda4) || 0;
+                }
+                if (response.data?.global_total !== undefined) {
+                    globalTotal.value = Math.max(Number(response.data.global_total) || 1, komposisiMinimal.value);
+                }
+
+                // Kode plat daerah aktif untuk animasi pengundian.
+                const platKode = response.data?.plat_kode;
+                if (Array.isArray(platKode) && platKode.length) {
+                    platDaerah.value = platKode;
+                }
+
+                // Mode pengundian aktif.
+                drawMode.value = response.data?.draw_mode || '';
+                if (isGlobal6.value) {
+                    // Default jumlah pemenang mengikuti pengaturan admin.
+                    quantity.value = Math.max(globalTotal.value, komposisiMinimal.value);
+                }
             } catch (error) {
                 console.error('Gagal memuat data wilayah:', error);
             }
+        };
+
+        // Keep-alive: ping ringan tiap 5 menit agar koneksi ke server tetap
+        // hidup selama perangkat dibiarkan standby, sehingga pengundian
+        // pertama setelah standby tidak lambat/terputus.
+        let keepAliveTimer = null;
+
+        const startKeepAlive = () => {
+            if (keepAliveTimer) return;
+            keepAliveTimer = setInterval(() => {
+                axios.get('/api/get-data/prize', { timeout: 15000 }).catch(() => {});
+            }, 5 * 60 * 1000);
+        };
+
+        const stopKeepAlive = () => {
+            if (!keepAliveTimer) return;
+            clearInterval(keepAliveTimer);
+            keepAliveTimer = null;
         };
 
         onMounted(async () => {
             document.addEventListener('click', closeDisplaySettingsOnOutsideClick);
             getOptionsPrize();
             getWilayah();
+            startKeepAlive();
             window.addEventListener('keydown', spaceKeyHandler);
         });
 
@@ -1320,6 +1529,7 @@ export default {
             undianList.value.forEach(row => stopDrawingRow(row));
             window.removeEventListener('keydown', spaceKeyHandler);
             document.removeEventListener('click', closeDisplaySettingsOnOutsideClick);
+            stopKeepAlive();
         });
 
         return {
@@ -1332,6 +1542,13 @@ export default {
             selectedPrizeLabel,
             maxQuantity,
             quantity,
+            globalRoda2,
+            globalRoda4,
+            drawMode,
+            isGlobal6,
+            platDaerah,
+            globalTotal,
+            komposisiProgress,
             settingError,
             onCategoryChange,
             saveSetting,

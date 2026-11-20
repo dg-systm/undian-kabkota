@@ -13,6 +13,8 @@ const app = createApp(rootComponent);
 app.provide('appName', window.appConfig?.appName ?? 'Laravel');
 app.provide('year', window.appConfig?.year ?? '2025');
 app.provide('platJateng', window.appConfig?.platJateng ?? []);
+// Kode plat daerah aktif (dari .env) untuk animasi pengundian.
+app.provide('platDaerah', window.appConfig?.platDaerah ?? []);
 app.provide('kabkota', window.appConfig?.kabkota ?? '');
 app.provide('winnersPerPage', window.appConfig?.winnersPerPage ?? 5);
 

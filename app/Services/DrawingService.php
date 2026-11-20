@@ -88,7 +88,7 @@ class DrawingService
      * lebih sedikit dari yang diminta. Pemanggilan diulang beberapa kali
      * tanpa mengubah isi SP.
      */
-    public function getWinnerCandidates(int $idLokasi, ?string $idKecamatan, int $required, int $maxAttempts = 10, bool $isBbnkb = false): Collection
+    public function getWinnerCandidates(int $idLokasi, ?string $idKecamatan, int $required, int $maxAttempts = 10, bool $isBbnkb = false, array $excludeIds = []): Collection
     {
         $required = max($required, 1);
         $collected = collect();
@@ -100,6 +100,7 @@ class DrawingService
 
             $collected = $collected
                 ->merge($rows)
+                ->reject(fn($row) => in_array((int) $row->id, $excludeIds, true))
                 ->unique('id')
                 ->values();
 
@@ -113,6 +114,214 @@ class DrawingService
         }
 
         return $collected;
+    }
+
+    /**
+     * Kandidat pemenang mode global (semua kecamatan) dengan komposisi roda.
+     *
+     * SP getWinner yang tersedia tidak memiliki parameter roda, sehingga
+     * kandidat diambil lebih banyak lewat SP getWinner(999, '', N) (mode
+     * global, semua kecamatan) lalu disaring per roda di sini tanpa
+     * menambah objek baru di database.
+     *
+     * @param  int  $roda2Required  jumlah pemenang roda 2
+     * @param  int  $roda4Required  jumlah pemenang roda 4
+     * @return array{roda2: Collection, roda4: Collection}
+     */
+    public function getWinnerCandidatesByRoda(int $roda2Required, int $roda4Required, int $maxAttempts = 15): array
+    {
+        $roda2Required = max(0, $roda2Required);
+        $roda4Required = max(0, $roda4Required);
+
+        $byRoda = [
+            'roda2' => collect(),
+            'roda4' => collect(),
+        ];
+
+        $needed = fn (string $key, int $required): int => max(0, $required - $byRoda[$key]->count());
+
+        $totalRequired = $roda2Required + $roda4Required;
+
+        if ($totalRequired === 0) {
+            return $byRoda;
+        }
+
+        // Ambil lebih banyak per panggilan karena hasil dibagi per jenis roda.
+        $batchSize = max($totalRequired * 5, 20);
+        $emptyAttempts = 0;
+        $seenIds = [];
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $remaining = $needed('roda2', $roda2Required) + $needed('roda4', $roda4Required);
+
+            if ($remaining === 0) {
+                break;
+            }
+
+            $rows = collect($this->getWinner(999, '', max($remaining, $batchSize)));
+
+            $added = false;
+
+            foreach ($rows as $row) {
+                $id = (int) ($row->id ?? 0);
+
+                if ($id <= 0 || isset($seenIds[$id])) {
+                    continue;
+                }
+
+                $roda = (string) ($row->roda ?? '');
+
+                if ($roda === '2' && $byRoda['roda2']->count() < $roda2Required) {
+                    $seenIds[$id] = true;
+                    $byRoda['roda2']->push($row);
+                    $added = true;
+                } elseif ($roda === '4' && $byRoda['roda4']->count() < $roda4Required) {
+                    $seenIds[$id] = true;
+                    $byRoda['roda4']->push($row);
+                    $added = true;
+                }
+            }
+
+            if (!$added) {
+                if (++$emptyAttempts >= 3) {
+                    break;
+                }
+            } else {
+                $emptyAttempts = 0;
+            }
+        }
+
+        return $byRoda;
+    }
+
+    /**
+     * Daftar kecamatan yang sudah memiliki pemenang grand prize
+     * (undian global), diambil dari pemenang yang tersimpan di database.
+     *
+     * Dipakai agar grand prize tidak menghasilkan pemenang dari kecamatan
+     * yang sama selama masih ada kecamatan yang belum menang, meski
+     * pengundian dilakukan bertahap dalam beberapa sesi.
+     *
+     * @return list<string> id kecamatan unik yang sudah menang grand prize
+     */
+    public function getGlobalDrawnKecamatan(): array
+    {
+        $rows = DB::table('winners')
+            ->join('draws', 'draws.id', '=', 'winners.draw_id')
+            ->join('kendaraans', 'kendaraans.id', '=', 'winners.kendaraan_id')
+            ->where('draws.is_global', true)
+            ->whereNotNull('kendaraans.id_kecamatan')
+            ->where('kendaraans.id_kecamatan', '!=', '')
+            ->distinct()
+            ->pluck('kendaraans.id_kecamatan');
+
+        return $rows
+            ->map(fn ($id) => trim((string) $id))
+            ->filter(fn ($id) => $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Kandidat pemenang grand prize (mode global) dengan aturan satu
+     * kecamatan satu pemenang:
+     *
+     * - kendaraan dari kecamatan yang sudah menang grand prize sebelumnya
+     *   ($excludeKecamatan) tidak diambil;
+     * - dalam satu pengundian pun maksimal satu pemenang per kecamatan.
+     *
+     * SP getWinner(999, ...) tidak punya parameter kecamatan dan hasilnya
+     * sampel acak, sehingga penyaringan dilakukan di sini dengan mengulang
+     * pemanggilan SP (pola sama dengan getWinnerCandidates) tanpa mengubah
+     * isi database.
+     *
+     * @param  list<string>  $excludeKecamatan  id kecamatan yang sudah menang
+     */
+    public function getGlobalWinnerCandidates(int $required, bool $isBbnkb = false, array $excludeKecamatan = [], int $maxAttempts = 30): Collection
+    {
+        $required = max($required, 1);
+        $collected = collect();
+        $seenIds = [];
+        $seenKecamatan = [];
+        $emptyAttempts = 0;
+
+        // Ambil lebih banyak per panggilan karena sebagian hasil bisa gugur
+        // oleh filter kecamatan atau kendaraan yang sudah pernah menang.
+        $batchSize = max($required * 5, 25);
+
+        for ($attempt = 0; $attempt < $maxAttempts && $collected->count() < $required; $attempt++) {
+            $rows = collect($this->getWinner(999, '', $batchSize, $isBbnkb));
+            $before = $collected->count();
+
+            foreach ($rows as $row) {
+                if ($collected->count() >= $required) {
+                    break;
+                }
+
+                $id = (int) ($row->id ?? 0);
+
+                if ($id <= 0 || isset($seenIds[$id])) {
+                    continue;
+                }
+
+                $kecamatan = trim((string) ($row->id_kecamatan ?? ''));
+
+                // Kendaraan tanpa id_kecamatan tidak bisa menjamin aturan
+                // satu kecamatan satu pemenang, jadi tidak diambil.
+                if ($kecamatan === '') {
+                    continue;
+                }
+
+                if (isset($seenKecamatan[$kecamatan]) || in_array($kecamatan, $excludeKecamatan, true)) {
+                    continue;
+                }
+
+                $seenIds[$id] = true;
+                $seenKecamatan[$kecamatan] = true;
+                $collected->push($row);
+            }
+
+            if ($collected->count() === $before) {
+                if (++$emptyAttempts >= 5) {
+                    break;
+                }
+            } else {
+                $emptyAttempts = 0;
+            }
+        }
+
+        return $collected;
+    }
+
+    /**
+     * Hitung progres komposisi: berapa pemenang roda 2 dan roda 4 yang
+     * sudah tersimpan untuk hadiah-hadiah yang dipilih.
+     *
+     * Dipakai agar pengundian bisa dilakukan bertahap (mis. 1 pemenang per
+     * undian) tanpa mengubah komposisi: setiap undian mengambil sisa slot
+     * komposisi berikutnya.
+     *
+     * @param  array<int, int|string>  $prizeIds
+     * @return array{roda2: int, roda4: int}
+     */
+    public function countDrawnWinnersByRoda(array $prizeIds): array
+    {
+        if (empty($prizeIds)) {
+            return ['roda2' => 0, 'roda4' => 0];
+        }
+
+        $rows = DB::table('winners')
+            ->join('kendaraans', 'kendaraans.id', '=', 'winners.kendaraan_id')
+            ->whereIn('winners.prize_id', $prizeIds)
+            ->groupBy('kendaraans.roda')
+            ->selectRaw('kendaraans.roda, COUNT(*) as total')
+            ->pluck('total', 'roda');
+
+        return [
+            'roda2' => (int) ($rows[2] ?? $rows['2'] ?? 0),
+            'roda4' => (int) ($rows[4] ?? $rows['4'] ?? 0),
+        ];
     }
 
     public function getSamsatId(string $samsatName): ?int

@@ -35,6 +35,21 @@
                                                 <div v-if="wilayah.kabkota" class="fw-semibold fs-sm">
                                                     {{ wilayah.kabkota }}
                                                 </div>
+                                                <div v-if="wilayah.drawMode === 'kecamatan'"
+                                                    class="text-muted small mt-1">
+                                                    <i class="fa fa-exchange-alt me-1"></i>
+                                                    Mode: Per Kecamatan
+                                                </div>
+                                                <div v-if="!wilayah.drawMode" class="text-danger small mt-1">
+                                                    <i class="fa fa-exclamation-triangle me-1"></i>
+                                                    Mode pengundian belum di-set. Atur di menu admin: Pengaturan Undian.
+                                                </div>
+                                                <div v-if="wilayah.drawMode === 'global6'"
+                                                    class="text-danger small mt-1">
+                                                    <i class="fa fa-exclamation-triangle me-1"></i>
+                                                    Mode pengundian aktif: Global Semua Kecamatan (6 pemenang).
+                                                    Halaman undian per kecamatan tidak aktif.
+                                                </div>
                                                 <div v-if="wilayah.error" class="text-danger small mt-1">
                                                     <i class="fa fa-exclamation-triangle me-1"></i>{{ wilayah.error }}
                                                 </div>
@@ -876,14 +891,24 @@ export default {
         const winnersDetermined = ref(false);
         const pageSwitching = ref(false);
         const drawButtonSize = ref(Number(localStorage.getItem('regularDrawButtonSize')) || 100);
+        // Kode plat daerah aktif untuk animasi pengundian. Sumber utama:
+        // konfigurasi .env via window.appConfig (tersedia sejak halaman
+        // dimuat), disegarkan lagi dari API wilayah bila ada. Bila belum
+        // terbaca, fallback ke daftar plat Jateng.
+        const injectedPlat = inject('platDaerah') || [];
+        const platDaerah = ref(injectedPlat.length ? injectedPlat : ['H', 'K', 'AD', 'G', 'R', 'AA']);
         const platJateng = ['H', 'K', 'AD', 'G', 'R', 'AA'];
         const disableTrigger = ref(true);
 
         // Batas waktu pengundian. Tujuannya agar tombol "Stop Pengundian!"
         // tidak pernah terkunci permanen bila request ke server lambat/menggantung.
+        // Batas dibuat besar karena request pertama setelah perangkat standby
+        // bisa sangat lambat (koneksi database/jaringan baru terbangun).
         const DRAW_START_DELAY = 3000;
-        const DRAW_REQUEST_TIMEOUT = 15000;
-        const DRAW_WATCHDOG_TIMEOUT = DRAW_REQUEST_TIMEOUT + 2000;
+        const DRAW_REQUEST_TIMEOUT = 45000;
+        // Watchdog memberi ruang ekstra untuk pemulihan hasil (recoverDraw)
+        // setelah request gagal/terputus.
+        const DRAW_WATCHDOG_TIMEOUT = DRAW_REQUEST_TIMEOUT + 20000;
 
         const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -904,6 +929,7 @@ export default {
         // --- Wilayah & Pengaturan state ---
         const wilayah = reactive({
             kabkota: inject('kabkota') || '',
+            drawMode: '',
             kecamatan: [],
             kecamatanSamsat: {},
             samsatIds: [],
@@ -1184,7 +1210,13 @@ export default {
             samsatIdMap: {},
         });
 
-        const hasSetup = computed(() => form.samsats.length > 0 && form.prize_ids.length > 0);
+        const hasSetup = computed(() => {
+            // Undian per kecamatan hanya aktif bila admin mengatur mode
+            // pengundian menjadi "kecamatan".
+            return wilayah.drawMode === 'kecamatan'
+                && form.samsats.length > 0
+                && form.prize_ids.length > 0;
+        });
 
         const isAllKecamatanSelected = computed(() => {
             if (wilayah.kecamatan.length === 0) return false;
@@ -1212,6 +1244,12 @@ export default {
         });
 
         const settingError = computed(() => {
+            if (!wilayah.drawMode) {
+                return 'Mode pengundian belum di-set. Atur terlebih dahulu di menu admin: Pengaturan Undian.';
+            }
+            if (wilayah.drawMode === 'global6') {
+                return 'Mode pengundian aktif adalah Global Semua Kecamatan (6 pemenang). Halaman undian per kecamatan tidak aktif.';
+            }
             if (wilayah.error) return wilayah.error;
             if (wilayah.idLokasiMismatch.length) {
                 return `APP_ID_LOKASI tidak cocok dengan mapping wilayah (ID lain: ${wilayah.idLokasiMismatch.join(', ')}). Periksa .env.`;
@@ -1287,7 +1325,9 @@ export default {
             row.drawing = true;
 
             row.interval.wilayah = setInterval(() => {
-                row.kodeWilayah = platJateng[Math.floor(Math.random() * platJateng.length)];
+                // Hanya kode plat daerah aktif yang tampil saat animasi.
+                const codes = platDaerah.value.length ? platDaerah.value : platJateng;
+                row.kodeWilayah = codes[Math.floor(Math.random() * codes.length)];
             }, 75);
 
             row.interval.angka = setInterval(() => {
@@ -1305,6 +1345,33 @@ export default {
             clearInterval(row.interval.wilayah);
             clearInterval(row.interval.angka);
             clearInterval(row.interval.seri);
+        };
+
+        /**
+         * Coba pulihkan hasil undian yang mungkin sudah tersimpan di server.
+         *
+         * Bila request pengundian terputus (mis. perangkat standby lama),
+         * backend bisa saja sudah menyelesaikan dan menyimpan pemenang,
+         * tetapi responsnya tidak sampai ke front-end. Endpoint
+         * /api/draw/recent mengembalikan hasil undian yang baru saja
+         * tersimpan agar tampilan tetap konsisten dengan database.
+         */
+        const recoverDraw = async () => {
+            try {
+                const response = await axios.get('api/draw/recent', { timeout: 10000 });
+                const items = response.data?.data;
+
+                if (response.data?.recovered && Array.isArray(items) && items.length > 0) {
+                    winnerList.value = items;
+                    getOptionsPrize();
+                    alert('Koneksi ke server sempat terputus, tetapi hasil undian sudah tersimpan di server dan kini ditampilkan.');
+                    return true;
+                }
+            } catch (error) {
+                console.error('Gagal memulihkan hasil undian:', error);
+            }
+
+            return false;
         };
 
         const pickWinner = async (session) => {
@@ -1332,15 +1399,39 @@ export default {
                 getOptionsPrize();
                 return true;
             } catch (error) {
-                if (session === drawSession) {
-                    undianList.value.forEach(row => stopDrawingRow(row));
-
-                    const timedOut = error.code === 'ERR_CANCELED' || error.code === 'ECONNABORTED';
-                    alert(timedOut
-                        ? 'Pengundian melebihi batas waktu. Silakan coba lagi.'
-                        : (error.response?.data.message || 'Terjadi kesalahan saat pengundian.'));
-                }
                 console.error('Gagal update:', error.response?.data || error);
+
+                if (session !== drawSession) return false;
+
+                // Sesi/koneksi kedaluwarsa: muat ulang halaman agar koneksi baru.
+                if (error.response?.status === 419) {
+                    alert('Sesi telah berakhir. Halaman akan dimuat ulang.');
+                    setTimeout(() => window.location.reload(), 1200);
+                    return false;
+                }
+
+                // Koneksi lambat/terputus: hasil bisa saja sudah tersimpan di
+                // server (backend tetap memproses sampai selesai). Coba pulihkan
+                // dulu sebelum menampilkan error.
+                const connectionIssue = error.code === 'ERR_CANCELED'
+                    || error.code === 'ECONNABORTED'
+                    || (error.response?.status ?? 0) >= 500
+                    || !error.response;
+
+                if (connectionIssue) {
+                    const recovered = await recoverDraw();
+
+                    if (recovered) {
+                        return true;
+                    }
+                }
+
+                undianList.value.forEach(row => stopDrawingRow(row));
+
+                const timedOut = error.code === 'ERR_CANCELED' || error.code === 'ECONNABORTED';
+                alert(timedOut
+                    ? 'Pengundian melebihi batas waktu. Silakan coba lagi.'
+                    : (error.response?.data.message || 'Terjadi kesalahan saat pengundian.'));
                 return false;
             } finally {
                 clearTimeout(timeoutId);
@@ -1545,6 +1636,14 @@ export default {
             try {
                 const response = await axios.get('/api/get-data/wilayah');
                 wilayah.kabkota = response.data.kabkota || wilayah.kabkota;
+                wilayah.drawMode = response.data.draw_mode || '';
+
+                // Kode plat daerah aktif untuk animasi pengundian.
+                const platKode = response.data?.plat_kode;
+                if (Array.isArray(platKode) && platKode.length) {
+                    platDaerah.value = platKode;
+                }
+
                 wilayah.kecamatan = response.data.kecamatan || [];
                 wilayah.kecamatanSamsat = response.data.kecamatan_samsat || {};
                 wilayah.samsatIds = response.data.samsat_ids || [];
@@ -1567,14 +1666,34 @@ export default {
             }
         };
 
+        // Keep-alive: ping ringan tiap 5 menit agar koneksi ke server tetap
+        // hidup selama perangkat dibiarkan standby, sehingga pengundian
+        // pertama setelah standby tidak lambat/terputus.
+        let keepAliveTimer = null;
+
+        const startKeepAlive = () => {
+            if (keepAliveTimer) return;
+            keepAliveTimer = setInterval(() => {
+                axios.get('/api/get-data/prize', { timeout: 15000 }).catch(() => {});
+            }, 5 * 60 * 1000);
+        };
+
+        const stopKeepAlive = () => {
+            if (!keepAliveTimer) return;
+            clearInterval(keepAliveTimer);
+            keepAliveTimer = null;
+        };
+
         onMounted(async () => {
             document.addEventListener('click', closeDisplaySettingsOnOutsideClick);
             getOptionsPrize();
             getWilayah();
+            startKeepAlive();
         });
 
         onUnmounted(() => {
             document.removeEventListener('click', closeDisplaySettingsOnOutsideClick);
+            stopKeepAlive();
         });
 
         return {
@@ -1586,6 +1705,7 @@ export default {
             selectedPrizeIds,
             onCategoryChange,
             platJateng,
+            platDaerah,
             wilayah,
             selectedKecamatan,
             kecamatanName,

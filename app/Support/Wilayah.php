@@ -147,6 +147,35 @@ class Wilayah
     }
 
     /**
+     * Kode plat daerah aktif (mis. "Plat AD" -> ["AD"]) untuk animasi
+     * pengundian. Sumber: mapping wilayah berdasarkan Kabupaten/Kota aktif
+     * (.env APP_KABKOTA).
+     *
+     * @return array<int, string>
+     */
+    public static function plateCodes(?string $kabkota = null): array
+    {
+        $info = static::find($kabkota ?? config('wilayah.active'));
+
+        return static::plateCodesFromLabel($info['plat'] ?? null);
+    }
+
+    /**
+     * Ambil kode plat dari label mapping wilayah (mis. "Plat AD" -> ["AD"]).
+     *
+     * @return array<int, string>
+     */
+    public static function plateCodesFromLabel(?string $platLabel): array
+    {
+        $codes = preg_split('/[\s,\/]+/', strtoupper(trim((string) $platLabel))) ?: [];
+
+        return array_values(array_filter(
+            array_map(fn ($code) => preg_replace('/[^A-Z0-9]/', '', (string) $code), $codes),
+            fn ($code) => $code !== '' && $code !== 'PLAT'
+        ));
+    }
+
+    /**
      * Normalisasi teks untuk keperluan deduplikasi.
      */
     protected static function normalize(?string $value): string
